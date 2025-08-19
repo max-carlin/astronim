@@ -38,8 +38,6 @@ def updateParticles(masses, positions, velocities, delta_time):
     starting_positions = np.array(positions)
     starting_velocities = np.array(velocities)
 
-    # How many particles are there?
-    # The _ indicates we don't care about the other value (number of dimensions)
     num_of_particles, _ = starting_positions.shape
 
        # Make sure the three input arrays have consistent shapes
@@ -57,20 +55,17 @@ def updateParticles(masses, positions, velocities, delta_time):
     # Equation: acceleration = force / mass
     starting_accelerations = starting_forces / np.array(masses).reshape(num_of_particles, 1)
 
-    # Calculate the ending positions
-    # Equation: position = velocity_0 * time + 0.5 * acceleration * time**2
+    #position = velocity_0 * time + 0.5 * acceleration * time**2
     nudge = starting_velocities * delta_time + 0.5 * starting_accelerations * delta_time ** 2
     ending_positions = starting_positions + nudge
 
     # Calculate net force vectors on all particles at the ending positions
     ending_forces = np.array(calculateForceVectors(masses, ending_positions))
 
-    # Calculate the acceleration due to gravity at the ending positions
-    # Equation: acceleration = force / mass
+    #acceleration = force / mass
     ending_accelerations = ending_forces / np.array(masses).reshape(num_of_particles, 1)
 
-    # Calculate the ending velocities
-    # Equation: velocity = velocity_0 + 0.5 * acceleration * time
+    #velocity = velocity_0 + 0.5 * acceleration * time
     ending_velocities = (starting_velocities + 0.5 * (ending_accelerations + starting_accelerations) * delta_time)
 
     return ending_positions, ending_velocities
