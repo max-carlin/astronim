@@ -1,2 +1,16 @@
 main.py
 testing.py
+testing2.py
+
+
+__pycache__/
+*.py[cod]
+
+
+venv/
+
+
+.DS_Store
+
+# Logs / misc
+*.log
