@@ -23,7 +23,7 @@ ARM_X_MEAN = 100 #200
 ARM_Y_MEAN = 50 #100
 
 SPIRAL = 1.5 #3.0
-ARMS = 2.0
+ARMS = 4
 
 HAZE_RATIO = 0.5
 
@@ -34,7 +34,7 @@ starTypes = {
 
 
 class Galaxy: 
-    def __init__(self, pos, galaxy_type = 'spiral_galaxy', color = None):
+    def __init__(self, pos:Vec3, galaxy_type: str = 'spiral_galaxy', color = None):
         # init function should draw the galaxy using only these args 
         self.galaxy_type = galaxy_type
         self.color = color

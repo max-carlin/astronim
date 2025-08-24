@@ -8,7 +8,7 @@ from astronim.utils.constants import DEPTH
 class BlackHole: 
     def __init__(self, pos:Vec3, vel: Vec3, mass: float, radius: float = 0.01, color = (255, 255, 255), trail = False):
  
-        self.velocity = vel
+        self.velocity = [vel.x, vel.y, vel.z]
         self.pos = pos
         self.mass = mass
         self.base_radius = radius
@@ -24,15 +24,15 @@ class BlackHole:
 
         dist = distance(self.pos, BlackHole.camera)
 
-        obj_pos_2d = get_2d(self.pos, BlackHole.rx, BlackHole.ry)
+        obj_pos_2d = get_2d(self.pos - BlackHole.camera, BlackHole.rx, BlackHole.ry)
+        if obj_pos_2d:
+            # scale radius with depth
+            self.radius = max(2, int(self.base_radius * DEPTH / dist))
 
-        # scale radius with depth
-        self.radius = max(2, int(self.base_radius * DEPTH / dist))
+            self.draw_star(obj_pos_2d, (250, 226, 67), screen, radius=self.radius, glow_radius=self.radius )
+            self.draw_star(obj_pos_2d, (255, 183, 0), screen, radius=self.radius, glow_radius=self.radius *2)
 
-        self.draw_star(obj_pos_2d, (250, 226, 67), screen, radius=self.radius, glow_radius=self.radius )
-        self.draw_star(obj_pos_2d, (255, 183, 0), screen, radius=self.radius, glow_radius=self.radius *2)
-
-        pygame.draw.circle(screen, (0, 0, 0), obj_pos_2d, int(0.9*self.radius))
+            pygame.draw.circle(screen, (0, 0, 0), obj_pos_2d, int(0.9*self.radius))
 
 
     def draw_glow_circle(self, surface, color, center, radius, glow_radius, width):

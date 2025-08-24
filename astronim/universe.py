@@ -7,7 +7,55 @@ import numpy as np
 
 
 class Universe:
-    def __init__(self, width=1920, height=1080, output_file = "output"):
+    """Handles the core loop of astronim. 
+
+        -Initializes pygame and the rendering window. 
+        -Manages the simulation and updates bodies. 
+        -Runs the renderer (camera, drawing, depth sorting)
+        -Records frames to an output .mp4 file using recorder. 
+        -Handles user input to move around scene. 
+
+        Attributes
+        ----------
+        screen : pygame.Surface
+            The pygame screen that the simulation will draw on. 
+
+        simulation : Simulation
+            Contains all the objects in the scene and update logic
+
+        renderer : Renderer
+            Contains draw order and handles drawing logic. 
+
+        recorder : Recorder
+            Captures screen frame-by-frame and uses ffmpeg to save video to a specified output file. 
+
+        running : bool
+            Main loop will run while true. 
+
+        clock : pygame.time.Clock
+            Controls frame timing
+
+        speed : float
+            Controls fly control speeds. 
+
+        shift_speed : float
+            Controls fly control speeds while holding down right shift. 
+
+        Methods
+        -------
+        handle_events(): 
+            Processes pygame events. 
+
+        main_loop(): 
+            Runs the simulation, rendering, and recording. Must be called in any project file. 
+
+        controls():
+            Handles all the controls for moving through the scene (WASD, space, ctrl, shift)
+
+    """
+    def __init__(self, width: int = 1920, height: int = 1080, output_file: str =  "output"):
+
+
         pygame.init()
         self.screen = pygame.display.set_mode((width, height))
         pygame.display.set_caption('Astronim')
@@ -22,9 +70,13 @@ class Universe:
         self.speed = 0.2
         self.shift_speed_factor = 10
 
-        self.output_file = output_file + '.mp4'
+        self.output_file = output_file 
 
+        
     def handle_events(self):
+        '''
+        Handles all of the pygame events, quits running on window close. 
+        '''
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
@@ -32,6 +84,9 @@ class Universe:
 
 
     def main_loop(self):
+        '''
+        The main loop that updates our simulation, draws to the screen, and records the scene. 
+        '''
         while self.running:
             dt = 0.1 * 86400 # seconds per frame
             self.clock.tick(120) # seconds per frame
@@ -50,11 +105,17 @@ class Universe:
             self.recorder.save_frame(self.screen)
 
         pygame.quit()
-        self.recorder.stop(output_file=self.output_file)
+        if self.output_file[-3:] == '.mp4':
+            self.recorder.stop(output_file=self.output_file)
+        else:
+            self.recorder.stop(output_file=self.output_file + '.mp4')
 
     
-
     def controls(self, keys):
+        '''
+        Handles all of the pygame controls to move through the scene. 
+        '''
+        
 
         if keys[pygame.K_w]:
             self.renderer.camera.x += np.sin(self.renderer.rx) * self.speed 
