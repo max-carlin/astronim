@@ -37,6 +37,7 @@ class Renderer:
         self.camera = Vec3(0, 0, 0)
         self.rx = 0
         self.ry = 0
+        self.camera_movement_called = False
 
     def draw(self, simulation): 
         '''Render all objects in the given simulation to the screen.
@@ -66,6 +67,15 @@ class Renderer:
             obj.set_camera(self.camera, self.rx, self.ry)
             obj.draw(self.screen)
 
+        if self.camera_movement_called: 
+            self.camera_function(self.camera)
+
+
         pygame.display.flip()
+
+    def camera_animation(self, camera_function):
+        self.camera_movement_called = True 
+        self.camera_function = camera_function
+
 
         

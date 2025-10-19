@@ -36,6 +36,8 @@ class Star:
 
     def draw(self, screen):
 
+        
+
         obj_pos_2d = get_2d(self.pos - Star.camera, Star.rx, Star.ry)
         if obj_pos_2d:
             dist = distance(self.pos, Star.camera)

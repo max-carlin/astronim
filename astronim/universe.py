@@ -71,6 +71,7 @@ class Universe:
         self.shift_speed_factor = 10
 
         self.output_file = output_file 
+        self.static_mouse = False
 
         
     def handle_events(self):
@@ -88,19 +89,21 @@ class Universe:
         The main loop that updates our simulation, draws to the screen, and records the scene. 
         '''
         while self.running:
-            dt = 0.1 * 86400 # seconds per frame
-            self.clock.tick(120) # seconds per frame
+            self.dt = 0.1 * 86400 # seconds per frame
+            # self.clock.tick(60) # seconds per frame
             self.handle_events()
 
 
             keys = pygame.key.get_pressed()
             self.controls(keys)
 
-            dx, dy = pygame.mouse.get_rel()
-            self.renderer.rx += np.radians(dx / 5)
-            self.renderer.ry -= np.radians(dy / 5)
 
-            self.simulation.update(dt)
+            if not self.static_mouse:
+                dx, dy = pygame.mouse.get_rel()
+                self.renderer.rx += np.radians(dx / 5)
+                self.renderer.ry -= np.radians(dy / 5)
+
+            self.simulation.update(self.dt)
             self.renderer.draw(self.simulation)
             self.recorder.save_frame(self.screen)
 
@@ -109,6 +112,8 @@ class Universe:
             self.recorder.stop(output_file=self.output_file)
         else:
             self.recorder.stop(output_file=self.output_file + '.mp4')
+        
+        
 
     
     def controls(self, keys):

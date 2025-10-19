@@ -2,6 +2,7 @@ import numpy as np
 import pygame
 import math
 from astronim.utils.tools import gaussianRandom, clamp, spiral, Vec3, get_2d
+from .star import Star
 import random
 
 NUM_STARS = 500
@@ -14,10 +15,10 @@ GALAXY_THICKNESS = 5
 CORE_X_DIST = 15 #33
 CORE_Y_DIST = 15 #33
 
-OUTER_CORE_X_DIST = 50 #100
+OUTER_CORE_X_DIST =  50 #100
 OUTER_CORE_Y_DIST = 50 #100
 
-ARM_X_DIST = 50 #100
+ARM_X_DIST =  50 #100
 ARM_Y_DIST = 25#50
 ARM_X_MEAN = 100 #200
 ARM_Y_MEAN = 50 #100
@@ -44,6 +45,8 @@ class Galaxy:
         types = {'spiral_galaxy': self.spiral_positions(), 'irregular_galaxy':self.irregular_positions(), "elliptical_galaxy":self.elliptical_positions()}
         self.positions = types[galaxy_type]
 
+        
+
     def update(self, camera, rx, ry):
         # just re-draw based on camera position/rotation
         self.draw(self.pos, camera, rx, ry)
@@ -56,12 +59,15 @@ class Galaxy:
             y = gaussianRandom(0, CORE_Y_DIST)
             z = gaussianRandom(0, GALAXY_THICKNESS)
             stars.append([Vec3(x, y, z), self.get_star_color()])
+            
 
         for i in range(NUM_STARS // 4):
             x = gaussianRandom(0, OUTER_CORE_X_DIST)
             y = gaussianRandom(0, OUTER_CORE_Y_DIST)
             z = gaussianRandom(0, GALAXY_THICKNESS)
             stars.append([Vec3(x, y, z), self.get_star_color()])
+
+
 
         for arm in range(int(ARMS)): 
             offset = arm *2 * math.pi / ARMS

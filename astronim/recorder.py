@@ -3,6 +3,7 @@ import pygame
 import tempfile
 import subprocess
 
+
 class Recorder:
     '''Records the scene frame-by-frame and compiles it into an mp4 file using ffmpeg. 
 

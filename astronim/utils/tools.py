@@ -19,6 +19,9 @@ class Vec3:
 
     def __sub__(self, other): 
         return Vec3(self.x - other.x, self.y - other.y, self.z-other.z)
+    
+    def __add__(self, other): 
+        return Vec3(self.x + other.x, self.y +other.y, self.z + other.z)
 
 
 # docstring wikipedia links in get_2d
@@ -69,7 +72,9 @@ def get_2d(pos, rx, ry):
     pos.x += WIDTH / 2
     pos.y = HEIGHT / 2 - pos.y
 
+    
     return (int(pos.x), int(pos.y))
+
 
 def gaussianRandom(mean = 0, stdev =1): 
     u = 1 - np.random.random()
