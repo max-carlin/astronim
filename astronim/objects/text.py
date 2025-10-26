@@ -14,6 +14,7 @@ class Text:
         self.current_message = ""
         self.char_delay = char_delay
         self.start_time = start_time
+        self.static = True
 
     def draw(self, screen): 
         dist = distance(self.pos, Text.camera)

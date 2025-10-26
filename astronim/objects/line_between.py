@@ -14,6 +14,7 @@ class LineBetween:
         self.animate = animate
         self.speed = speed
         self.progress = 0 if self.animate else 1
+        self.static = True
 
     def draw(self, screen): 
 
@@ -53,14 +54,6 @@ class LineBetween:
             end = get_2d(self.obj2.pos - LineBetween.camera, LineBetween.rx, LineBetween.ry)
 
         return (start, end)
-
-
-
-
-
-
-
-        
 
 
     @classmethod

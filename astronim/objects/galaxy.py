@@ -1,7 +1,7 @@
 import numpy as np
 import pygame
 import math
-from astronim.utils.tools import gaussianRandom, clamp, spiral, Vec3, get_2d
+from astronim.utils.tools import gaussianRandom, clamp, spiral, Vec3, get_2d, rotation_matrix
 from .star import Star
 import random
 
@@ -35,15 +35,25 @@ starTypes = {
 
 
 class Galaxy: 
-    def __init__(self, pos:Vec3, galaxy_type: str = 'spiral_galaxy', color = None):
+    def __init__(self, pos:Vec3, galaxy_type: str = 'spiral_galaxy', color = None, rotation: Vec3 = Vec3(0, 0, 0)):
         # init function should draw the galaxy using only these args 
         self.galaxy_type = galaxy_type
         self.color = color
         
         self.pos = Vec3(pos.x, pos.y, pos.z)
+        self.rotation = rotation
 
-        types = {'spiral_galaxy': self.spiral_positions(), 'irregular_galaxy':self.irregular_positions(), "elliptical_galaxy":self.elliptical_positions()}
-        self.positions = types[galaxy_type]
+        types = {'spiral_galaxy': self.spiral_positions(), 
+                 'irregular_galaxy':self.irregular_positions(), 
+                 "elliptical_galaxy":self.elliptical_positions()}
+        stars = types[galaxy_type]
+        # Apply rotation
+        if any([self.rotation.x, self.rotation.y, self.rotation.z]):
+            stars = [[self.rotate_vector(star[0]), star[1]] for star in stars]
+
+        self.positions = stars
+
+        self.static = True
 
         
 
@@ -134,6 +144,22 @@ class Galaxy:
 
         self.stars = stars
         return self.stars
+    
+    def rotate_vector(self, v: Vec3):
+        """Rotate vector v by self.rotation (in radians) around x, y, z axes."""
+        x, y, z = v.x, v.y, v.z
+        rx, ry, rz = self.rotation.x, self.rotation.y, self.rotation.z
+
+        # Around x-axis
+        y, z = np.matmul(rotation_matrix(rx), np.array([y, z]))
+
+        # Around y-axis
+        z, x = np.matmul(rotation_matrix(ry), np.array([z, x]))
+
+        # Around z-axis
+        x, y = np.matmul(rotation_matrix(rz), np.array([x, y]))
+
+        return Vec3(x, y, z)
     
     def draw(self, screen):
         for local_star in self.positions:

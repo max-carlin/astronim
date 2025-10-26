@@ -2,12 +2,15 @@
 import numpy as np
 import math
 from dataclasses import dataclass
+from astronim.utils.constants import WIDTH, HEIGHT, DEPTH
 
 
 #Settings
-WIDTH = 1200
-HEIGHT = 800
-DEPTH = 500
+# WIDTH = 1200
+# HEIGHT = 800
+# # WIDTH = 3840
+# # HEIGHT = 2160
+# DEPTH = 500
 
 
 # Vec3 Class

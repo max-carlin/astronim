@@ -29,6 +29,7 @@ class Graph:
         self.points_per_second = points_per_second
 
         self.edges = []
+        self.static = True
 
 
     def draw(self, screen): 

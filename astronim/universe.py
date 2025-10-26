@@ -72,6 +72,7 @@ class Universe:
 
         self.output_file = output_file 
         self.static_mouse = False
+        
 
         
     def handle_events(self):
