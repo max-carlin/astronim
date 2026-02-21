@@ -1,4 +1,5 @@
 from astronim.utils.leapfrog import updateParticles
+from astronim.utils.barnes_hut import fast_updateParticles
 from astronim.utils.tools import distance, Vec3
 import numpy as np
 from astronim.utils.constants import AU
@@ -42,7 +43,7 @@ class Simulation:
         
         self.static_objects = []
 
-    def add_star(self, star): 
+    def add(self, star): 
         '''Adds a star object to our simulation. 
 
         params
@@ -51,20 +52,17 @@ class Simulation:
             The object whose position, mass, and velocity will be added to our simulation.
             
         '''
-        self.star_objects.append(star)
-        self.star_masses.append(star.mass)
-        self.star_vels.append(star.velocity)
-        self.star_positions.append([star.pos.x, star.pos.y, star.pos.z])
+        try:
+            if star.static:
+                self.static_objects.append(star)
 
-    def add_static(self, obj): 
-        '''Adds a static object to our simulation. 
+        except AttributeError:
+            self.star_objects.append(star)
+            self.star_masses.append(star.mass)
+            self.star_vels.append(star.velocity)
+            self.star_positions.append([star.pos.x, star.pos.y, star.pos.z])
 
-        params
-        ------
-        obj : astronim.object
-            The static object to be added to the scene.
-        '''
-        self.static_objects.append(obj)
+   
 
     def update(self, dt): 
         '''Runs one step of our leapfrog integrator and updates the positions and velocities of every particle. 
@@ -79,13 +77,17 @@ class Simulation:
         if not self.star_objects: 
             return
         
-        
-        leapfrog_pos, leapfrog_vel = updateParticles(np.array(self.star_masses), 
+        leapfrog_pos, leapfrog_vel = fast_updateParticles(np.array(self.star_masses), 
                                                      np.array(self.star_positions) * AU, 
                                                      np.array(self.star_vels), 
                                                      dt)
         
         for i, obj in enumerate(self.star_objects): 
+
+            # Check if the obj is static or not
+            if getattr(obj, "static", False):
+                continue
+
             px, py, pz = leapfrog_pos[i]
             
             obj.pos.x = px  / AU
@@ -96,9 +98,7 @@ class Simulation:
 
             self.star_positions[i] = [obj.pos.x, obj.pos.y, obj.pos.z]
             self.star_vels[i] = obj.velocity
-
             
-
             obj.trail_list.append([obj.pos.x, obj.pos.y, obj.pos.z])
 
             if len(obj.trail_list) > obj.trail_length: 

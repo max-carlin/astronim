@@ -12,7 +12,7 @@ class Graph:
 
     def __init__(self, width_height:tuple, x_data: np.ndarray, y_data: np.ndarray, 
                  pos:tuple = (0, 0, 0), points_per_second = 30, frame_color = (255, 255, 255), 
-                 point_color = (255, 255, 255)):
+                 point_color = (255, 255, 255), alpha:int = 255, color_fn: callable = None):
 
         self.width, self.height = width_height
         self.x_data = x_data
@@ -22,6 +22,9 @@ class Graph:
         self.box_animation = False
         self.frame_color = frame_color
         self.point_color = point_color
+        self.alpha = alpha
+        self.color_fn = color_fn
+        self.current_colors = []
 
         self.current_x_data, self.current_y_data = ([], [])
         self.data_i = 0
@@ -29,6 +32,7 @@ class Graph:
         self.points_per_second = points_per_second
 
         self.edges = []
+        self.static = True
 
 
     def draw(self, screen): 
@@ -71,7 +75,7 @@ class Graph:
             LineBetween(self.br, self.bl, animate=True, speed=0.008, color = self.frame_color),
         ]
 
-    def scatter(self, screen, margin = 0.1):
+    def scatter(self, screen, margin = 0.01):
          
         self.update_data_animation()
         if not hasattr(self, "bl") or not hasattr(self, "tl"):
@@ -81,6 +85,13 @@ class Graph:
             self.current_x_data = self.current_x_data.tolist()
         if isinstance(self.current_y_data, np.ndarray):
             self.current_y_data = self.current_y_data.tolist()
+
+        if not hasattr(self, "_scatter_surface"):
+            self._scatter_surface = pygame.Surface(
+                screen.get_size(), pygame.SRCALPHA
+            )
+
+        self._scatter_surface.fill((0, 0, 0, 0))  
 
         if self.current_x_data and self.current_y_data:
         
@@ -93,8 +104,11 @@ class Graph:
 
             usable_width = self.width * (1 - 2*margin)
             usable_height = self.height * (1 - 2*margin)
+            
+            if self.color_fn is None:
+                color = (*self.point_color[:3], self.alpha)
 
-            for x, y in zip(self.current_x_data, self.current_y_data):
+            for j, (x, y) in enumerate(zip(self.current_x_data, self.current_y_data)):
                 # Normalize into [-hw, hw], [-hh, hh]
                 x_norm = ((x - x_min) / x_range) * usable_width - usable_width/2
                 y_norm = ((y - y_min) / y_range) * usable_height - usable_height/2
@@ -104,8 +118,20 @@ class Graph:
 
                 # Project into 2D
                 point_2d = get_2d(point_3d - Graph.camera, Graph.rx, Graph.ry)
+
+                # if point_2d:
+                #     if self.color_fn is not None:
+                #         color = self.color_fn(point_2d, self.rect)
+
                 if point_2d:
-                    pygame.draw.circle(screen, self.point_color, point_2d, 3)
+                    pygame.draw.circle(
+                        self._scatter_surface,
+                        self.current_colors[j] if self.color_fn else color,
+                        point_2d,
+                        3
+                    )
+            screen.blit(self._scatter_surface, (0, 0))
+
 
     def update_data_animation(self):
         now = time.time()
@@ -118,6 +144,12 @@ class Graph:
                 if self.data_i < len(self.x_data):
                     self.current_x_data.append(self.x_data[self.data_i])
                     self.current_y_data.append(self.y_data[self.data_i])
+
+                    if self.color_fn is not None:
+                        self.current_colors.append(
+                            self.color_fn(self.data_i)
+                        )
+
                     self.data_i += 1
 
 

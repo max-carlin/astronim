@@ -1,32 +1,32 @@
 import numpy as np
 import pygame
 import math
-from astronim.utils.tools import gaussianRandom, clamp, spiral, Vec3, get_2d
+from astronim.utils.tools import gaussianRandom, clamp, spiral, Vec3, get_2d, rotation_matrix
 from .star import Star
 import random
 
-NUM_STARS = 500
-NUM_ARMS = 4
+# NUM_STARS = 500
+# NUM_ARMS = 4
 
-#std in z
-GALAXY_THICKNESS = 5
+# #std in z
+# GALAXY_THICKNESS = 5
 
-#std of the core
-CORE_X_DIST = 15 #33
-CORE_Y_DIST = 15 #33
+# #std of the core
+# CORE_X_DIST = 15 #33
+# CORE_Y_DIST = 15 #33
 
-OUTER_CORE_X_DIST =  50 #100
-OUTER_CORE_Y_DIST = 50 #100
+# OUTER_CORE_X_DIST =  50 #100
+# OUTER_CORE_Y_DIST = 50 #100
 
-ARM_X_DIST =  50 #100
-ARM_Y_DIST = 25#50
-ARM_X_MEAN = 100 #200
-ARM_Y_MEAN = 50 #100
+# ARM_X_DIST =  50 #100
+# ARM_Y_DIST = 25#50
+# ARM_X_MEAN = 100 #200
+# ARM_Y_MEAN = 50 #100
 
-SPIRAL = 1.5 #3.0
-ARMS = 4
+# SPIRAL = 1.5 #3.0
+# ARMS = 4
 
-HAZE_RATIO = 0.5
+# HAZE_RATIO = 0.5
 
 starTypes = {
     "percentage" : [76.45, 12.1, 7.6, 3.0, 0.6, 0.13],
@@ -35,15 +35,50 @@ starTypes = {
 
 
 class Galaxy: 
-    def __init__(self, pos:Vec3, galaxy_type: str = 'spiral_galaxy', color = None):
+
+    DEFAULTS = {
+        "NUM_STARS": 500,
+        "NUM_ARMS": 4,
+        "GALAXY_THICKNESS": 5,
+        "CORE_X_DIST": 15,
+        "CORE_Y_DIST": 15,
+        "OUTER_CORE_X_DIST": 50,
+        "OUTER_CORE_Y_DIST": 50,
+        "ARM_X_DIST": 50,
+        "ARM_Y_DIST": 25,
+        "ARM_X_MEAN": 100,
+        "ARM_Y_MEAN": 50,
+        "SPIRAL": 1.5,
+        "ARMS": 4,
+        "MAJOR_AXIS" : 75,  
+        "MINOR_AXIS" : 50,  
+        "Z_THICKNESS": 5 
+    }
+
+    def __init__(self, pos:Vec3, galaxy_type: str = 'spiral_galaxy', 
+                 color = None, rotation: Vec3 = Vec3(0, 0, 0), **kwargs):
         # init function should draw the galaxy using only these args 
         self.galaxy_type = galaxy_type
         self.color = color
         
         self.pos = Vec3(pos.x, pos.y, pos.z)
+        self.rotation = rotation
 
-        types = {'spiral_galaxy': self.spiral_positions(), 'irregular_galaxy':self.irregular_positions(), "elliptical_galaxy":self.elliptical_positions()}
-        self.positions = types[galaxy_type]
+        # Update default dictionary with kwargs
+        self.params = self.DEFAULTS.copy()
+        self.params.update(kwargs)
+
+        types = {'spiral_galaxy': self.spiral_positions(), 
+                 'irregular_galaxy':self.irregular_positions(), 
+                 "elliptical_galaxy":self.elliptical_positions()}
+        stars = types[galaxy_type]
+        # Apply rotation
+        if any([self.rotation.x, self.rotation.y, self.rotation.z]):
+            stars = [[self.rotate_vector(star[0]), star[1]] for star in stars]
+
+        self.positions = stars
+
+        self.static = True
 
         
 
@@ -54,29 +89,29 @@ class Galaxy:
     def spiral_positions(self): 
         stars = [] #pos and color of star in the form [[vec, color], [vec, color], ...]
 
-        for i in range(NUM_STARS // 4):
-            x = gaussianRandom(0, CORE_X_DIST)
-            y = gaussianRandom(0, CORE_Y_DIST)
-            z = gaussianRandom(0, GALAXY_THICKNESS)
+        for i in range(self.params["NUM_STARS"] // 4):
+            x = gaussianRandom(0, self.params["CORE_X_DIST"])
+            y = gaussianRandom(0, self.params["CORE_Y_DIST"])
+            z = gaussianRandom(0, self.params["GALAXY_THICKNESS"])
             stars.append([Vec3(x, y, z), self.get_star_color()])
             
 
-        for i in range(NUM_STARS // 4):
-            x = gaussianRandom(0, OUTER_CORE_X_DIST)
-            y = gaussianRandom(0, OUTER_CORE_Y_DIST)
-            z = gaussianRandom(0, GALAXY_THICKNESS)
+        for i in range(self.params["NUM_STARS"] // 4):
+            x = gaussianRandom(0, self.params["OUTER_CORE_X_DIST"])
+            y = gaussianRandom(0, self.params["OUTER_CORE_Y_DIST"])
+            z = gaussianRandom(0, self.params["GALAXY_THICKNESS"])
             stars.append([Vec3(x, y, z), self.get_star_color()])
 
 
 
-        for arm in range(int(ARMS)): 
-            offset = arm *2 * math.pi / ARMS
+        for arm in range(int(self.params["ARMS"])): 
+            offset = arm *2 * math.pi / self.params["ARMS"]
 
-            for i in range(NUM_STARS // 4):
+            for i in range(self.params["NUM_STARS"] // 4):
                 pos = spiral(
-                    gaussianRandom(ARM_X_MEAN, ARM_X_DIST), 
-                    gaussianRandom(ARM_Y_MEAN, ARM_Y_DIST), 
-                    gaussianRandom(0, GALAXY_THICKNESS), 
+                    gaussianRandom(self.params["ARM_X_MEAN"], self.params["ARM_X_DIST"]), 
+                    gaussianRandom(self.params["ARM_Y_MEAN"], self.params["ARM_Y_DIST"]), 
+                    gaussianRandom(0, self.params["GALAXY_THICKNESS"]), 
                     offset
                 )
                 stars.append([pos, self.get_star_color()])
@@ -87,25 +122,25 @@ class Galaxy:
     def irregular_positions(self): 
         stars = [] #pos and color of star in the form [[vec, color], [vec, color], ...]
 
-        for i in range(NUM_STARS // 4):
-            x = gaussianRandom(0, CORE_X_DIST)
-            y = gaussianRandom(0, CORE_Y_DIST)
-            z = gaussianRandom(0, GALAXY_THICKNESS)
+        for i in range(self.params["NUM_STARS"] // 4):
+            x = gaussianRandom(0, self.params["CORE_X_DIST"])
+            y = gaussianRandom(0, self.params["CORE_Y_DIST"])
+            z = gaussianRandom(0, self.params["GALAXY_THICKNESS"])
             stars.append([Vec3(x, y, z), self.get_star_color()])
 
-        for i in range(NUM_STARS // 4):
-            x = gaussianRandom(0, OUTER_CORE_X_DIST)
-            y = gaussianRandom(0, OUTER_CORE_Y_DIST)
-            z = gaussianRandom(0, GALAXY_THICKNESS)
+        for i in range(self.params["NUM_STARS"] // 4):
+            x = gaussianRandom(0, self.params["OUTER_CORE_X_DIST"])
+            y = gaussianRandom(0, self.params["OUTER_CORE_Y_DIST"])
+            z = gaussianRandom(0, self.params["GALAXY_THICKNESS"])
             stars.append([Vec3(x, y, z), self.get_star_color()])
 
         
 
-        for i in range(NUM_STARS // 4):
+        for i in range(self.params["NUM_STARS"] // 4):
 
-            x = gaussianRandom(ARM_X_MEAN, ARM_X_DIST)
-            y = gaussianRandom(ARM_Y_MEAN, ARM_Y_DIST)
-            z = gaussianRandom(0, GALAXY_THICKNESS)
+            x = gaussianRandom(self.params["ARM_X_MEAN"], self.params["ARM_X_DIST"])
+            y = gaussianRandom(self.params["ARM_Y_MEAN"], self.params["ARM_Y_DIST"])
+            z = gaussianRandom(0, self.params["GALAXY_THICKNESS"])
             stars.append([Vec3(x, y, z), self.get_star_color()])
 
 
@@ -116,24 +151,37 @@ class Galaxy:
     def elliptical_positions(self):
         stars = []
 
-        MAJOR_AXIS = 75  
-        MINOR_AXIS = 50  
-        Z_THICKNESS = 5  
 
-        for _ in range(NUM_STARS):
+        for _ in range(self.params["NUM_STARS"]):
             
             angle = random.uniform(0, 2 * math.pi)
-            radius_major = abs(gaussianRandom(0, MAJOR_AXIS))
-            radius_minor = radius_major * (MINOR_AXIS / MAJOR_AXIS)
+            radius_major = abs(gaussianRandom(0, self.params["MAJOR_AXIS"]))
+            radius_minor = radius_major * (self.params["MINOR_AXIS"] / self.params["MAJOR_AXIS"])
 
             x = radius_major * math.cos(angle)
             y = radius_minor * math.sin(angle)
-            z = gaussianRandom(0, Z_THICKNESS)
+            z = gaussianRandom(0, self.params["Z_THICKNESS"])
 
             stars.append([Vec3(x, y, z), self.get_star_color()])
 
         self.stars = stars
         return self.stars
+    
+    def rotate_vector(self, v: Vec3):
+        """Rotate vector v by self.rotation (in radians) around x, y, z axes."""
+        x, y, z = v.x, v.y, v.z
+        rx, ry, rz = self.rotation.x, self.rotation.y, self.rotation.z
+
+        # Around x-axis
+        y, z = np.matmul(rotation_matrix(rx), np.array([y, z]))
+
+        # Around y-axis
+        z, x = np.matmul(rotation_matrix(ry), np.array([z, x]))
+
+        # Around z-axis
+        x, y = np.matmul(rotation_matrix(rz), np.array([x, y]))
+
+        return Vec3(x, y, z)
     
     def draw(self, screen):
         for local_star in self.positions:

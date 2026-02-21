@@ -1,59 +1,412 @@
 import pygame 
 import numpy as np
-import random
-from astronim.utils.tools import get_2d, Vec3, distance
-from astronim.utils.constants import DEPTH
+import math
+from astronim.utils.tools import get_2d, Vec3, distance, rotation_matrix, dot, cross, rodrigues
+from astronim.utils.constants import DEPTH, WIDTH, HEIGHT
 
 
 class BlackHole: 
-    def __init__(self, pos:Vec3, vel: Vec3, mass: float, radius: float = 0.01, color = (255, 255, 255), trail = False):
+    def __init__(self, pos:Vec3, vel: Vec3, mass: float, 
+                 radius: float = 0.01, color = (255, 255, 255), 
+                 trail = False, rotation : Vec3 = Vec3(0, 0, 0)):
  
         self.velocity = [vel.x, vel.y, vel.z]
         self.pos = pos
         self.mass = mass
         self.base_radius = radius
         self.color = color
+        self.rotation = rotation
+
+        self.num_lines = 30
 
         self.trail = trail
         self.trail_list = []
         self.trail_length = 50
+
+        self.model_normal = Vec3(0, 0, 1)   # “front” of BH in model space
+        self.face_normal  = Vec3(0, 0, 1)
+
+
+
+        # self.circle_lines = self.glow_circle(radius=5, num_lines=30)
+        self.parabola_lines = self.glow_parabolas(num_lines=self.num_lines, a=0.08)
+        self.ellipse_lines = self.glow_ellipse(num_lines=self.num_lines, a=8, b=6)
+
+        self.circle_lines = []
+        self.circle_lines.extend(self.parabola_lines)
+        self.circle_lines.extend(self.ellipse_lines)
+
+
+        if any([self.rotation.x, self.rotation.y, self.rotation.z]):
+            self.circle_lines = [
+                ([self.rotate_vector(p) for p in points], color)
+                for points, color in self.circle_lines
+            ]
+        
+        self.surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
        
 
 
-    def draw(self, screen): 
+    def draw(self, screen):
+        # self.update_facing()
 
-        dist = distance(self.pos, BlackHole.camera)
-
-        obj_pos_2d = get_2d(self.pos - BlackHole.camera, BlackHole.rx, BlackHole.ry)
-        if obj_pos_2d:
-            # scale radius with depth
-            self.radius = max(2, int(self.base_radius * DEPTH / dist))
-
-            self.draw_star(obj_pos_2d, (250, 226, 67), screen, radius=self.radius, glow_radius=self.radius )
-            self.draw_star(obj_pos_2d, (255, 183, 0), screen, radius=self.radius, glow_radius=self.radius *2)
-
-            pygame.draw.circle(screen, (0, 0, 0), obj_pos_2d, int(0.9*self.radius))
+        # self.ellipse_lines = [
+        #     ([self.match_camera(p) for p in points], color)
+        #     for points, color in self.ellipse_lines
+        # ]
+        # self.parabola_lines = [
+        #     ([self.match_camera(p) for p in points], color)
+        #     for points, color in self.parabola_lines
+        # ]
 
 
-    def draw_glow_circle(self, surface, color, center, radius, glow_radius, width):
+        self.surface.fill((0, 0, 0, 0))
+        for idx, (points, color) in enumerate(self.ellipse_lines):
+            # rotated = [self.rotate_to_camera(p) for p in points]
+            # back_segs, front_segs = self.split_ellipse_by_depth(rotated)
+            back_segs, front_segs = self.split_ellipse_by_depth(points)
+
+            for seg in front_segs:
+                path = []
+                for p in seg:
+                    pt = get_2d((self.pos + p) - BlackHole.camera,
+                                BlackHole.rx, BlackHole.ry)
+                    if pt:
+                        path.append(pt)
+
+            if len(path) < 2:
+                continue
+            r, g, b, a = color
+            radial_factor = np.exp(- (idx / self.num_lines) ** 2 * 2.5)
+
+            N_GLOW = 5
+            for j in range(N_GLOW):
+                t = j / N_GLOW
+                width = int(2 + t * 10)
+                alpha = int(a * radial_factor * np.exp(-3 * t))
+                cool = int(30 * t)
+
+                pygame.draw.lines(
+                    self.surface,
+                    (min(255, r + cool),
+                    min(255, g + cool),
+                    min(255, b + cool),
+                    alpha),
+                    False,
+                    path,
+                    width
+                )
+
+        self.draw_event_horizon_cutout(radius_px=6.75)
+
+        for idx, (points, color) in enumerate(self.ellipse_lines):
+            back_segs, front_segs = self.split_ellipse_by_depth(points)
+            # rotated = [self.rotate_to_camera(p) for p in points]
+            # back_segs, front_segs = self.split_ellipse_by_depth(rotated)
+
+            for seg in back_segs:
+                path = []
+                for p in seg:
+                    pt = get_2d((self.pos + p) - BlackHole.camera,
+                                BlackHole.rx, BlackHole.ry)
+                    if pt:
+                        path.append(pt)
+
+            if len(path) < 2:
+                continue
+            r, g, b, a = color
+            radial_factor = np.exp(- (idx / self.num_lines) ** 2 * 2.5)
+
+            N_GLOW = 5
+            for j in range(N_GLOW):
+                t = j / N_GLOW
+                width = int(2 + t * 10)
+                alpha = int(a * radial_factor * np.exp(-3 * t))
+                cool = int(30 * t)
+
+                pygame.draw.lines(
+                    self.surface,
+                    (min(255, r + cool),
+                    min(255, g + cool),
+                    min(255, b + cool),
+                    alpha),
+                    False,
+                    path,
+                    width
+                )
+
         
-        glow_surf = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
+        for idx, (points, color) in enumerate(self.parabola_lines):
+            path = []
 
-        # multiple circles with decreasing alpha for glow
-        for i in np.arange(glow_radius, radius, -1):
-            t =  (i - radius) / (glow_radius - radius)
-            alpha = int(255 * np.exp(-4 * t))
-            pygame.draw.circle(glow_surf, (*color, alpha), (glow_radius, glow_radius), i, width=width)
+            for p in points:
+                pt = get_2d((self.pos + p) - BlackHole.camera,
+                            BlackHole.rx, BlackHole.ry)
+                if pt:
+                    path.append(pt)
+
+            if len(path) < 2:
+                continue
+            r, g, b, a = color
+            radial_factor = np.exp(- (idx / self.num_lines) ** 2 * 2.5)
+
+            N_GLOW = 5
+            for j in range(N_GLOW):
+                t = j / N_GLOW
+                width = int(2 + t * 10)
+                alpha = int(a * radial_factor * np.exp(-3 * t))
+                cool = int(30 * t)
+
+                pygame.draw.lines(
+                    self.surface,
+                    (min(255, r + cool),
+                    min(255, g + cool),
+                    min(255, b + cool),
+                    alpha),
+                    False,
+                    path,
+                    width
+                )
+
+        screen.blit(self.surface, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
 
 
-        glow_rect = glow_surf.get_rect(center=center)
-        surface.blit(glow_surf, glow_rect, special_flags = pygame.BLEND_ALPHA_SDL2 )
+    def glow_circle(self, num_lines, radius):
 
-        pygame.draw.circle(surface, color, center, radius, width=width)
+        circles = []
+        start_radius = radius
+        end_radius = radius + 2
 
 
-    def draw_star(self, obj_pos_2d, color, screen, width = 0, radius = 2, glow_radius = 20):
-        self.draw_glow_circle(screen, color, obj_pos_2d, radius=radius, glow_radius=glow_radius, width = width)
+        for idx, i in enumerate(np.linspace(start_radius, end_radius, num_lines)):
+            circle = self.circle_config(i)
+
+            alpha = max(50, int(255 * np.exp(-0.025 * idx)))
+            red, green, blue = self.get_color(idx)
+
+            color = (red, green, blue, alpha)
+
+            circles.append([circle, color])
+        
+        return circles
+    
+    def glow_ellipse(self, num_lines, a, b):
+
+        ellipses = []
+        start_radius = (a, b)
+        end_radius = (a + 4, b+4)
+
+        a_range = np.linspace(start_radius[0], end_radius[0], num_lines)
+        b_range = np.linspace(start_radius[1], end_radius[1], num_lines)
+
+        for idx, (a_i, b_i) in enumerate(zip(a_range, b_range)) :
+
+            ellipse = self.ellipse_config(a_i, b_i)
+
+            alpha = max(50, int(255 * np.exp(-0.025 * idx)))
+            red, green, blue = self.get_color(idx)
+
+            color = (red, green, blue, alpha)
+
+            ellipses.append([ellipse, color])
+        
+        return ellipses
+
+    def glow_parabolas(self, num_lines, a=0.08):
+        curves = []
+        a_vals = np.linspace(a, a * 1.8, num_lines)
+
+        y_target = 0.0  # where all parabolas terminate visually
+
+        for idx, a_i in enumerate(a_vals):
+            x_extent = np.sqrt((y_target + 7) / a_i)
+
+            upper = self.parabola_config(a=a_i, sign=1,
+                                        offset=-7, x_extent=x_extent)
+            lower = self.parabola_config(a=a_i, sign=-1,
+                                        offset=-7, x_extent=x_extent)
+
+            alpha = max(50, int(255 * np.exp(-0.05 * idx)))
+
+            red, green, blue = self.get_color(idx)
+            color = (red, green, blue, alpha)
+
+            curves.append([upper, color])
+            curves.append([lower, color])
+
+        return curves
+
+    def circle_config(self, radius):
+
+        circle_points = []
+        center = Vec3(0, 0, 0)
+
+        for i in np.linspace(0, 2*np.pi, 50):
+
+            x = radius * np.cos(i)
+            y = radius * np.sin(i)
+
+            z = center.z
+
+            circle_points.append(Vec3(x, y, z))
+
+
+        return circle_points
+    
+    def ellipse_config(self, a, b):
+        ellipse_points = []
+        center = Vec3(0, 0, 0)
+        # a = self.base_radius
+        # b = (6/8) * self.base_radius
+
+
+        for i in np.linspace(0, 2*np.pi, 50):
+
+            x = a * np.cos(i)
+            z = b * np.sin(i)
+
+            y = center.y
+
+            ellipse_points.append(Vec3(x, y, z))
+
+        return ellipse_points
+    
+
+    def parabola_config(self, a=0.08, x_extent=8, num_pts=60, sign=1, offset=2.0):
+        points = []
+        # x_extent = self.base_radius
+        for idx, x in enumerate(np.linspace(-x_extent, x_extent, num_pts)):
+            y = sign * (a * x * x) + sign * offset
+            z = 0
+            points.append(Vec3(x, y, z))
+        return points
+
+
+
+
+    def get_color(self, i):
+        deep_orange = (255, 208, 0)
+        white = (255, 255, 255)
+
+        red_range = np.linspace(deep_orange[0], white[0], self.num_lines)
+        green_range = np.linspace(deep_orange[1], white[1], self.num_lines)
+        blue_range = np.linspace(deep_orange[2], white[2], self.num_lines)
+
+        red = red_range[i]
+        blue = blue_range[i]
+        green = green_range[i]
+
+        return red, green, blue 
+    
+    def rotate_vector(self, v: Vec3):
+        """Rotate vector v by self.rotation (in radians) around x, y, z axes."""
+        x, y, z = v.x, v.y, v.z
+        rx, ry, rz = self.rotation.x, self.rotation.y, self.rotation.z
+
+        # Around x-axis
+        y, z = np.matmul(rotation_matrix(rx), np.array([y, z]))
+
+        # Around y-axis
+        z, x = np.matmul(rotation_matrix(ry), np.array([z, x]))
+
+        # Around z-axis
+        x, y = np.matmul(rotation_matrix(rz), np.array([x, y]))
+
+        return Vec3(x, y, z)
+    
+    def match_camera(self, v: Vec3):
+        x, y, z = v.x, v.y, v.z
+
+        y, z = np.matmul(rotation_matrix(BlackHole.rx), np.array([y, z]))
+        z, x = np.matmul(rotation_matrix(BlackHole.ry), np.array([z, x]))
+
+        return Vec3(x, y, z)
+
+    def split_ellipse_by_depth(self, points):
+        """
+        Splits ellipse polyline into back-facing (z < 0)
+        and front-facing (z >= 0) segments.
+        """
+        back, front = [], []
+
+        current = []
+        current_is_front = None
+
+        for p in points:
+            is_front = p.z >= 0
+
+            if current_is_front is None:
+                current = [p]
+                current_is_front = is_front
+            elif is_front == current_is_front:
+                current.append(p)
+            else:
+                # segment switch
+                if current_is_front:
+                    front.append(current)
+                else:
+                    back.append(current)
+
+                current = [p]
+                current_is_front = is_front
+
+        # append final
+        if current:
+            if current_is_front:
+                front.append(current)
+            else:
+                back.append(current)
+
+        return back, front
+
+    def draw_event_horizon_cutout(self, radius_px=22):
+        center = get_2d(self.pos - BlackHole.camera, BlackHole.rx, BlackHole.ry)
+        if not center:
+            return
+        dist = distance(self.pos, BlackHole.camera)
+        radius = max(2, min(5000, int(radius_px * DEPTH / dist )))
+
+        # Subtract alpha+RGB from the glow surface to "punch out" a hole.
+        # Use a slightly larger radius than the visible disk so the back ring doesn't leak.
+        cutout = pygame.Surface((radius * 2 + 2, radius * 2 + 2), pygame.SRCALPHA)
+        cutout.fill((0, 0, 0, 0))
+
+        pygame.draw.circle(cutout, (255, 255, 255, 255), (radius + 1, radius + 1), radius)
+
+
+        self.surface.blit(
+            cutout,
+            (center[0] - radius - 1, center[1] - radius - 1),
+            special_flags= pygame.BLEND_ALPHA_SDL2
+        )
+        self.surface.blit(
+            cutout,
+            (center[0] - radius - 1, center[1] - radius - 1),
+            special_flags= pygame.BLEND_RGBA_SUB
+        )
+
+    def screen_occludes(self, star_pos):
+        """
+        Returns True if a star at star_pos is hidden behind the BH.
+        """
+        bh_2d = get_2d(self.pos - BlackHole.camera, BlackHole.rx, BlackHole.ry)
+        star_2d = get_2d(star_pos - BlackHole.camera, BlackHole.rx, BlackHole.ry)
+
+        if bh_2d is None or star_2d is None:
+            return False
+
+        # star must be farther than BH
+        if distance(star_pos, BlackHole.camera) <= distance(self.pos, BlackHole.camera):
+            return False
+
+        # screen-space radius
+        dist = distance(self.pos, BlackHole.camera)
+        radius = max(2, int(7.0 * DEPTH / dist))
+
+        dx = star_2d[0] - bh_2d[0]
+        dy = star_2d[1] - bh_2d[1]
+
+        return dx*dx + dy*dy < radius*radius
 
     def draw_trail(self, screen): 
         obj_path_2d = [
@@ -62,7 +415,93 @@ class BlackHole:
         if len(obj_path_2d) >1:
             pygame.draw.lines(screen, (255, 255, 255), False, obj_path_2d, 1)
 
+    def draw_trail_color(self, trail_surface, speed_max, speed_min):
+        if len(self.trail_list) < 2:
+            return
+        
+        # Use only recent points so trails don't lag
+        RECENT = 25
+        points = self.trail_list[-RECENT:]
 
+        obj_path_2d = []
+        for p in points:
+            pt = get_2d(Vec3(*p) - BlackHole.camera, BlackHole.rx, BlackHole.ry)
+            if pt is not None:
+                obj_path_2d.append(pt)
+
+        if len(obj_path_2d) < 2:
+            return
+
+        # alpha based on velocity (much bigger scaling)
+        vx, vy, vz = self.velocity
+        speed = math.sqrt(vx*vx + vy*vy + vz*vz)
+
+        # --- Normalize speed into [0, 1] based on global min/max ---
+        if speed_max > speed_min:
+            rel = (speed - speed_min) / (speed_max - speed_min)
+        else:
+            rel = 0.0  # fallback if speeds identical
+
+        # clamp exactly
+        rel = max(0.0, min(1.0, rel))
+
+        # --- Map rel → alpha (0 → 20, 1 → 255) ---
+        alpha = int(20 + rel * (255 - 20))
+
+
+
+        # Colorbar: blue (slow) → white (mid) → orange (fast)
+        if rel < 0.5:
+            # Map 0 → blue to 0.5 → white
+            t = rel / 0.5
+            rgb = self.lerp_color((0, 128, 255), (255, 255, 255), t)
+        else:
+            # Map 0.5 → white to 1 → orange
+            t = (rel - 0.5) / 0.5
+            rgb = self.lerp_color((255, 255, 255), (255, 165, 0), t)
+
+        color = (*rgb, alpha)
+
+        pygame.draw.lines(trail_surface, color, False, obj_path_2d, 1)
+
+    def lerp_color(self, c1, c2, t):
+        return (
+            int(c1[0] + (c2[0] - c1[0]) * t),
+            int(c1[1] + (c2[1] - c1[1]) * t),
+            int(c1[2] + (c2[2] - c1[2]) * t)
+        )
+    
+    def update_facing(self):
+        # Direction from BH to camera in world space
+        to_cam = BlackHole.camera - self.pos
+        n = math.sqrt(to_cam.x**2 + to_cam.y**2 + to_cam.z**2)
+        if n == 0:
+            return
+
+        self.face_normal = Vec3(
+            to_cam.x / n,
+            to_cam.y / n,
+            to_cam.z / n
+        )
+
+    def rotate_to_camera(self, v: Vec3):
+        a = self.model_normal
+        b = self.face_normal
+
+        axis = cross(a, b)
+        axis_len = math.sqrt(axis.x**2 + axis.y**2 + axis.z**2)
+
+        # normals already aligned → no rotation
+        if axis_len < 1e-6:
+            return v
+
+        axis = Vec3(axis.x/axis_len, axis.y/axis_len, axis.z/axis_len)
+        cos_theta = max(-1.0, min(1.0, dot(a, b)))
+        theta = math.acos(cos_theta)
+
+        return rodrigues(v, axis, theta)
+
+    
     @classmethod
     def set_camera(cls, camera, rx, ry):
         """Called in main_loop in astronim"""
@@ -71,153 +510,4 @@ class BlackHole:
         cls.ry = ry
 
 
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# class BlackHole: 
-#     def __init__(self, BH_pos, screen, color, radius = 50):
-#         self.BH_pos = BH_pos
-#         self.base_radius = radius
-#         self.front_disk = []
-#         self.back_disk = []
-#         self.half_disk_random_factors()
-#         self.screen = screen
-
-        
-
-#     def update(self, camera_pos): 
-#         bh_2d = get_2d(self.BH_pos - camera)
-   
-#         #update according to depth somehow
-#         if bh_2d: 
-
-#             dx = self.BH_pos.x - camera_pos.x
-#             dy = self.BH_pos.y - camera_pos.y
-#             dz = self.BH_pos.z - camera_pos.z
-
-#             self.dist = (dx**2 + dy**2 + dz**2)**0.5
-            
-#             self.radius = int(self.base_radius *DEPTH / self.dist)
-    
-
-
-#             if self.radius > 0:
-                
-#                 self.draw_half_disk(self.front_angles, self.front_r_factors)#disk
-#                 # pygame.draw.circle(screen, (255, 255,255), bh_2d, self.radius, width=2)
-#                 # pygame.draw.circle(screen, (0, 0, 0), bh_2d, self.radius - 0.1)
-
-#                 self.draw_star(bh_2d, (252, 250, 210), self.screen, radius=self.radius, glow_radius=100)
-#                 pygame.draw.circle(self.screen, (0, 0, 0), bh_2d, self.radius - 0.1*self.radius)
-
-
-#                 self.draw_half_disk(self.back_angles, self.back_r_factors) #disk
-
-
-#     def draw_half_disk(self, angles, r_factors): 
-
-
-#         for angle, r_factor in zip(angles, r_factors):
-
-#             r = self.radius + r_factor * 2* DEPTH / self.dist
-
-#             x = r * np.cos(angle) + self.BH_pos.x
-#             z = r * np.sin(angle) + self.BH_pos.z
-#             y = 0 + self.BH_pos.y #random.uniform(-2, 2)  # tiny vertical jitter
-
-#             p = get_2d(Vec3(x, y, z) - camera)
-#             if p: 
-#                 # pygame.draw.circle(self.screen,  (200, 100, 50), p, 2)
-#                 self.draw_star(p, self.get_color(r_factor), self.screen, glow_radius=20)
-
-#     def get_color(self, r_factor): 
-#         # scale radius contribution by thickness, not full DEPTH
-#         r = self.radius + r_factor * (self.thickness / 2)
-#         min_r = self.radius - self.thickness / 2
-#         max_r = self.radius + self.thickness / 2
-        
-#         # normalize to 0..1
-#         t = (r - min_r) / (max_r - min_r)
-        
-#         if t >= 0.9: 
-#             return (252, 196, 63)
-#         if t >= 0.8: 
-#             return (255, 208, 0)    
-#         if t >= 0.6: 
-#             return (252, 226, 109)  
-#         if t >= 0.5: 
-#             return (250, 244, 160)  
-
-
-#         return (252, 250, 210)  
-        
-
-#     def half_disk_random_factors(self, n_points=1000, radius=50, thickness=15):
-
-#         # all of the points in the disk are generated at a random
-#         # angle and radius + random r_factor. We only want to generate those once. 
-#         # We generate the front of the accretion disk and back separatley so we can get depth right.
-
-#         self.front_angles = []
-#         self.front_r_factors = []
-#         self.thickness = thickness
-
-
-#         for _ in range(int(n_points / 2)):
-#             angle = random.uniform(0, np.pi)
-#             r_factor = random.uniform(-thickness/2, thickness/2)
-#             self.front_angles.append(angle)
-#             self.front_r_factors.append(r_factor)
-
-#         self.back_angles = []
-#         self.back_r_factors = []
-
-#         for _ in range(int(n_points / 2)):
-#             angle = random.uniform(np.pi, 2*np.pi)
-#             r_factor = random.uniform(-thickness/2, thickness/2)
-#             self.back_angles.append(angle)
-#             self.back_r_factors.append(r_factor)
-
-
-
-#     def draw_glow_circle(self, surface, color, center, radius, glow_radius, width):
-        
-#         glow_surf = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
-
-#         # multiple circles with decreasing alpha for glow
-#         for i in np.arange(glow_radius, radius, -1):
-#             t =  (i - radius) / (glow_radius - radius)
-#             alpha = int(255 * np.exp(-4 * t))
-#             pygame.draw.circle(glow_surf, (*color, alpha), (glow_radius, glow_radius), i, width=width)
-
-
-#         glow_rect = glow_surf.get_rect(center=center)
-#         surface.blit(glow_surf, glow_rect, special_flags = pygame.BLEND_ALPHA_SDL2 )
-
-#         pygame.draw.circle(surface, color, center, radius, width=width)
-
-
-#     def draw_star(self, obj_pos_2d, color, screen, width = 0, radius = 2, glow_radius = 20):
-#         self.draw_glow_circle(screen, color, obj_pos_2d, radius=radius, glow_radius=glow_radius, width = width)
-
-        
 
