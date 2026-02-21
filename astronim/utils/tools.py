@@ -25,6 +25,15 @@ class Vec3:
     
     def __add__(self, other): 
         return Vec3(self.x + other.x, self.y +other.y, self.z + other.z)
+    
+    def __mul__(self, other):
+        return Vec3(self.x * other, self.y * other, self.z * other)
+                 
+    def mag(self):
+        return np.sqrt(self.x**2 + self.y**2 + self.z**2)
+    
+    def normalize(self):
+        return Vec3(self.x / self.mag(), self.y / self.mag(), self.z / self.mag())
 
 
 # docstring wikipedia links in get_2d
@@ -105,5 +114,32 @@ def distance(obj_pos_3d, camera):
     dist = (dx**2 + dy**2 + dz**2)**0.5 + 1
 
     return dist
+
+def cross(v1, v2):
+    a = np.array([v1.x, v1.y, v1.z])
+    b = np.array([v2.x, v2.y, v2.z])
+
+    product = np.cross(a, b)
+
+    return Vec3(product[0], product[1], product[2])
+
+def dot(v1: Vec3, v2: Vec3):
+    return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z
+
+def rotation_angle(v1, v2):
+    theta_d = dot(v1, v2)
+    return np.arccos(theta_d)
+
+def rodrigues(v:Vec3, k:Vec3, theta):
+    '''
+    If v is a vector in ℝ3 and k is a 
+    unit vector describing an axis of 
+    rotation about which v rotates by an angle θ according to the right hand rule, the Rodrigues formula for the rotated vector vrot 
+    '''
+    cross_p = cross(k, v)
+    dot_p = dot(k, v)
+    v_rot = v * np.cos(theta) + cross_p * np.sin(theta) + k * (dot_p) * (1 - np.cos(theta))
+
+    return v_rot
 
 

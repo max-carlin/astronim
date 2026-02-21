@@ -1,4 +1,5 @@
 from astronim.utils.leapfrog import updateParticles
+from astronim.utils.barnes_hut import fast_updateParticles
 from astronim.utils.tools import distance, Vec3
 import numpy as np
 from astronim.utils.constants import AU
@@ -54,8 +55,7 @@ class Simulation:
         try:
             if star.static:
                 self.static_objects.append(star)
-            
-                
+
         except AttributeError:
             self.star_objects.append(star)
             self.star_masses.append(star.mass)
@@ -77,12 +77,17 @@ class Simulation:
         if not self.star_objects: 
             return
         
-        leapfrog_pos, leapfrog_vel = updateParticles(np.array(self.star_masses), 
+        leapfrog_pos, leapfrog_vel = fast_updateParticles(np.array(self.star_masses), 
                                                      np.array(self.star_positions) * AU, 
                                                      np.array(self.star_vels), 
                                                      dt)
         
         for i, obj in enumerate(self.star_objects): 
+
+            # Check if the obj is static or not
+            if getattr(obj, "static", False):
+                continue
+
             px, py, pz = leapfrog_pos[i]
             
             obj.pos.x = px  / AU
@@ -93,9 +98,7 @@ class Simulation:
 
             self.star_positions[i] = [obj.pos.x, obj.pos.y, obj.pos.z]
             self.star_vels[i] = obj.velocity
-
             
-
             obj.trail_list.append([obj.pos.x, obj.pos.y, obj.pos.z])
 
             if len(obj.trail_list) > obj.trail_length: 

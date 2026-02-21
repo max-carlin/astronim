@@ -17,6 +17,7 @@ class Text:
         self.static = True
 
     def draw(self, screen): 
+
         dist = distance(self.pos, Text.camera)
         size = max(2, min(5000, int(self.base_size * DEPTH / dist)))
         font = pygame.font.SysFont('Times New Roman', size)
@@ -28,15 +29,18 @@ class Text:
             text_surface = font.render(self.message, True, self.color)
 
         textRect = text_surface.get_rect()
-        # textRect.center = (WIDTH //2, HEIGHT//2)
-        textRect.center = (3840 //2, 2160//2)
+        textRect.center = (WIDTH //2, HEIGHT//2)
+        # textRect.center = (3840 //2, 2160//2)
         #Change width and heigth back!!!!
 
         text_pos = get_2d(self.pos - Text.camera, Text.rx, Text.ry)
 
         if text_pos: 
+
             textRect.center = text_pos
             screen.blit(text_surface, textRect)
+
+
 
     def update_message(self):
 
