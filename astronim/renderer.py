@@ -130,11 +130,8 @@ class Renderer:
 
     
         if self.camera_movement_called:
-            
-            self.camera_function(self.camera)
-            
 
-        pygame.display.flip()
+            self.camera_function(self.camera)
 
         # self.csv_frame_counter += 1
 

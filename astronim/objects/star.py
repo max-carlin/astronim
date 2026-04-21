@@ -88,13 +88,9 @@ class Star:
     def draw_trail_color(self, trail_surface, speed_max, speed_min):
         if len(self.trail_list) < 2:
             return
-        
-        # Use only recent points so trails don't lag
-        RECENT = 25
-        points = self.trail_list[-RECENT:]
 
         obj_path_2d = []
-        for p in points:
+        for p in self.trail_list:
             pt = get_2d(Vec3(*p) - Star.camera, Star.rx, Star.ry)
             if pt is not None:
                 obj_path_2d.append(pt)

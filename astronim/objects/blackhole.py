@@ -2,7 +2,7 @@ import pygame
 import numpy as np
 import math
 from astronim.utils.tools import get_2d, Vec3, distance, rotation_matrix, dot, cross, rodrigues
-from astronim.utils.constants import DEPTH, WIDTH, HEIGHT
+from astronim.utils import constants
 
 
 class BlackHole: 
@@ -43,8 +43,12 @@ class BlackHole:
                 for points, color in self.circle_lines
             ]
         
-        self.surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-       
+        self.surface = pygame.Surface((constants.WIDTH, constants.HEIGHT), pygame.SRCALPHA)
+
+
+
+    def on_resize(self, w, h):
+        self.surface = pygame.Surface((w, h), pygame.SRCALPHA)
 
 
     def draw(self, screen):
@@ -364,7 +368,7 @@ class BlackHole:
         if not center:
             return
         dist = distance(self.pos, BlackHole.camera)
-        radius = max(2, min(5000, int(radius_px * DEPTH / dist )))
+        radius = max(2, min(5000, int(radius_px * constants.DEPTH / dist )))
 
         # Subtract alpha+RGB from the glow surface to "punch out" a hole.
         # Use a slightly larger radius than the visible disk so the back ring doesn't leak.
@@ -401,7 +405,7 @@ class BlackHole:
 
         # screen-space radius
         dist = distance(self.pos, BlackHole.camera)
-        radius = max(2, int(7.0 * DEPTH / dist))
+        radius = max(2, int(7.0 * constants.DEPTH / dist))
 
         dx = star_2d[0] - bh_2d[0]
         dy = star_2d[1] - bh_2d[1]
