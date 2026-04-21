@@ -40,10 +40,18 @@ class Simulation:
         self.star_masses = []
         self.star_vels = []
         self.star_positions = []
-        
+
         self.static_objects = []
 
-    def add(self, star): 
+    def clear(self):
+        '''Removes every object from the simulation so a scene can be rebuilt from scratch.'''
+        self.star_objects.clear()
+        self.star_masses.clear()
+        self.star_vels.clear()
+        self.star_positions.clear()
+        self.static_objects.clear()
+
+    def add(self, star):
         '''Adds a star object to our simulation. 
 
         params

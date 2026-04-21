@@ -1,8 +1,12 @@
+import os
+import runpy
+import traceback
+
 import pygame
 from astronim.simulation import Simulation
 from astronim.renderer import Renderer
 from astronim.recorder import Recorder
-from astronim.utils.tools import Vec3 
+from astronim.utils.tools import Vec3
 import numpy as np
 
 
@@ -93,19 +97,33 @@ class Universe:
 
 
 
-    def main_loop(self):
+    def main_loop(self, watch=None):
         '''
-        The main loop that updates our simulation, draws to the screen, and records the scene. 
+        The main loop that updates our simulation, draws to the screen, and records the scene.
+
+        If ``watch`` is a path to a script defining ``build(u)``, the loop polls its
+        mtime and re-executes ``build(u)`` in place whenever the file changes, so
+        edits take effect without closing the pygame window.
         '''
+        watch_mtime = self._watch_mtime(watch) if watch else None
+        poll_every = 10
+        frame = 0
+
         while self.running:
             self.dt = 0.1 * 86400 # seconds per frame
             # self.clock.tick(60) # seconds per frame
             self.handle_events()
 
+            if watch and frame % poll_every == 0:
+                current = self._watch_mtime(watch)
+                if current is not None and current != watch_mtime:
+                    watch_mtime = current
+                    self._reload_scene(watch)
 
             keys = pygame.key.get_pressed()
             self.controls(keys)
-            
+
+            frame += 1
 
 
             # if not self.static_mouse:
@@ -181,6 +199,40 @@ class Universe:
         self.paused = not getattr(self, "paused", False)
         for obj in self.simulation.star_objects:
             obj.static = self.paused
+
+    @staticmethod
+    def _watch_mtime(path):
+        try:
+            return os.path.getmtime(path)
+        except (FileNotFoundError, OSError):
+            return None
+
+    def _reload_scene(self, watch_path):
+        '''Re-execute the watched script and rebuild the scene in place.'''
+        cam = self.renderer.camera
+        rx, ry = self.renderer.rx, self.renderer.ry
+        try:
+            ns = runpy.run_path(watch_path, run_name="__reload__")
+        except Exception:
+            print(f"[astronim] reload failed to execute {watch_path}:")
+            traceback.print_exc()
+            return
+
+        build = ns.get("build")
+        if not callable(build):
+            print(f"[astronim] {watch_path} defines no build(u); keeping current scene")
+            return
+
+        self.simulation.clear()
+        try:
+            build(self)
+        except Exception:
+            print(f"[astronim] build(u) raised during reload:")
+            traceback.print_exc()
+        finally:
+            self.renderer.camera = cam
+            self.renderer.rx = rx
+            self.renderer.ry = ry
 
         
 
