@@ -103,13 +103,17 @@ class Universe:
         self._rx_vel = 0.0
         self._ry_vel = 0.0
 
-        self.output_file = output_file 
+        self.output_file = output_file
         self.static_mouse = False
 
         self.on_tab = on_tab
-        
 
-        
+        # Register with the interactive REPL pump, if it's listening. Import
+        # lazily so non-interactive scripts don't pay any import cost.
+        from astronim import repl as _repl
+        _repl._set_active(self)
+
+
     def handle_events(self):
         '''
         Handles all of the pygame events, quits running on window close. 
@@ -125,6 +129,44 @@ class Universe:
 
 
 
+    def tick(self):
+        '''
+        Run exactly one frame: events, controls, physics, render, record, present.
+
+        Extracted from ``main_loop`` so external drivers (e.g. the interactive
+        REPL pump) can advance the scene one frame at a time while keeping
+        pygame on the main thread.
+        '''
+        self.dt = 0.1 * 86400  # seconds per frame
+        self.handle_events()
+
+        keys = pygame.key.get_pressed()
+        self.controls(keys)
+
+        self.simulation.update(self.dt)
+        self.renderer.draw(self.simulation)
+        self.recorder.save_frame(self.render_surface)
+
+        win_w, win_h = self.screen.get_size()
+        render_w, render_h = self.render_surface.get_size()
+        if (win_w, win_h) == (render_w, render_h):
+            self.screen.blit(self.render_surface, (0, 0))
+        else:
+            # Fit the render surface into the window preserving aspect ratio;
+            # letterbox/pillarbox the remainder so objects don't squish when
+            # the user drags to a different aspect.
+            scale = min(win_w / render_w, win_h / render_h)
+            scaled_w = max(1, int(render_w * scale))
+            scaled_h = max(1, int(render_h * scale))
+            scaled = pygame.transform.smoothscale(
+                self.render_surface, (scaled_w, scaled_h)
+            )
+            self.screen.fill((0, 0, 0))
+            self.screen.blit(
+                scaled, ((win_w - scaled_w) // 2, (win_h - scaled_h) // 2)
+            )
+        pygame.display.flip()
+
     def main_loop(self, watch=None):
         '''
         The main loop that updates our simulation, draws to the screen, and records the scene.
@@ -138,38 +180,14 @@ class Universe:
         frame = 0
 
         while self.running:
-            self.dt = 0.1 * 86400 # seconds per frame
-            # self.clock.tick(60) # seconds per frame
-            self.handle_events()
-
             if watch and frame % poll_every == 0:
                 current = self._watch_mtime(watch)
                 if current is not None and current != watch_mtime:
                     watch_mtime = current
                     self._reload_scene(watch)
 
-            keys = pygame.key.get_pressed()
-            self.controls(keys)
-
+            self.tick()
             frame += 1
-
-            # if not self.static_mouse:
-            #     dx, dy = pygame.mouse.get_rel()
-            #     self.renderer.rx += np.radians(dx / 5)
-            #     self.renderer.ry -= np.radians(dy / 5)
-
-            self.simulation.update(self.dt)
-            self.renderer.draw(self.simulation)
-            self.recorder.save_frame(self.render_surface)
-
-            window_size = self.screen.get_size()
-            if window_size == self.render_surface.get_size():
-                self.screen.blit(self.render_surface, (0, 0))
-            else:
-                pygame.transform.smoothscale(
-                    self.render_surface, window_size, self.screen
-                )
-            pygame.display.flip()
 
         pygame.quit()
         if self.output_file[-3:] == '.mp4':

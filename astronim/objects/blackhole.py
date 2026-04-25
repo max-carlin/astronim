@@ -1,30 +1,29 @@
 import pygame 
 import numpy as np
 import math
-from astronim.utils.tools import get_2d, Vec3, distance, rotation_matrix, dot, cross, rodrigues
+from astronim.utils.tools import get_2d, Vec3, distance, rotation_matrix
 from astronim.utils import constants
 
 
-class BlackHole: 
-    def __init__(self, pos:Vec3, vel: Vec3, mass: float, 
-                 radius: float = 0.01, color = (255, 255, 255), 
-                 trail = False, rotation : Vec3 = Vec3(0, 0, 0)):
- 
+class BlackHole:
+    def __init__(self, pos:Vec3, vel: Vec3, mass: float,
+                 radius: float = 0.01, color = (255, 255, 255),
+                 trail = False, rotation : Vec3 = Vec3(0, 0, 0),
+                 tilt_angle: float = math.radians(15)):
+
         self.velocity = [vel.x, vel.y, vel.z]
         self.pos = pos
         self.mass = mass
         self.base_radius = radius
         self.color = color
         self.rotation = rotation
+        self.tilt_angle = tilt_angle
 
         self.num_lines = 30
 
         self.trail = trail
         self.trail_list = []
         self.trail_length = 50
-
-        self.model_normal = Vec3(0, 0, 1)   # “front” of BH in model space
-        self.face_normal  = Vec3(0, 0, 1)
 
 
 
@@ -52,25 +51,27 @@ class BlackHole:
 
 
     def draw(self, screen):
-        # self.update_facing()
-
-        # self.ellipse_lines = [
-        #     ([self.match_camera(p) for p in points], color)
-        #     for points, color in self.ellipse_lines
-        # ]
-        # self.parabola_lines = [
-        #     ([self.match_camera(p) for p in points], color)
-        #     for points, color in self.parabola_lines
-        # ]
-
-
         self.surface.fill((0, 0, 0, 0))
-        for idx, (points, color) in enumerate(self.ellipse_lines):
-            # rotated = [self.rotate_to_camera(p) for p in points]
-            # back_segs, front_segs = self.split_ellipse_by_depth(rotated)
-            back_segs, front_segs = self.split_ellipse_by_depth(points)
+        # Painter's order: back rings first so the cutout punches them out
+        # (otherwise the spherical horizon doesn't occlude what's behind it).
+        self._draw_ellipse_segments(front_only=False)
+        self.draw_event_horizon_cutout(radius_px=6.0)
+        self._draw_ellipse_segments(front_only=True)
+        self._draw_parabolas()
 
-            for seg in front_segs:
+        screen.blit(self.surface, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+    def _draw_ellipse_segments(self, front_only):
+        for idx, (points, color) in enumerate(self.ellipse_lines):
+            view_points = self._tilt_points(points)
+            back_segs, front_segs = self.split_ellipse_by_depth(view_points)
+            segs = front_segs if front_only else back_segs
+            r, g, b, a = color
+            radial_factor = np.exp(- (idx / self.num_lines) ** 2 * 2.5)
+            N_GLOW = 5
+
+            for seg in segs:
+                seg = self._to_world(seg)
                 path = []
                 for p in seg:
                     pt = get_2d((self.pos + p) - BlackHole.camera,
@@ -78,69 +79,29 @@ class BlackHole:
                     if pt:
                         path.append(pt)
 
-            if len(path) < 2:
-                continue
-            r, g, b, a = color
-            radial_factor = np.exp(- (idx / self.num_lines) ** 2 * 2.5)
+                if len(path) < 2:
+                    continue
 
-            N_GLOW = 5
-            for j in range(N_GLOW):
-                t = j / N_GLOW
-                width = int(2 + t * 10)
-                alpha = int(a * radial_factor * np.exp(-3 * t))
-                cool = int(30 * t)
+                for j in range(N_GLOW):
+                    t = j / N_GLOW
+                    width = int(2 + t * 10)
+                    alpha = int(a * radial_factor * np.exp(-3 * t))
+                    cool = int(30 * t)
 
-                pygame.draw.lines(
-                    self.surface,
-                    (min(255, r + cool),
-                    min(255, g + cool),
-                    min(255, b + cool),
-                    alpha),
-                    False,
-                    path,
-                    width
-                )
+                    pygame.draw.lines(
+                        self.surface,
+                        (min(255, r + cool),
+                         min(255, g + cool),
+                         min(255, b + cool),
+                         alpha),
+                        False,
+                        path,
+                        width
+                    )
 
-        self.draw_event_horizon_cutout(radius_px=6.75)
-
-        for idx, (points, color) in enumerate(self.ellipse_lines):
-            back_segs, front_segs = self.split_ellipse_by_depth(points)
-            # rotated = [self.rotate_to_camera(p) for p in points]
-            # back_segs, front_segs = self.split_ellipse_by_depth(rotated)
-
-            for seg in back_segs:
-                path = []
-                for p in seg:
-                    pt = get_2d((self.pos + p) - BlackHole.camera,
-                                BlackHole.rx, BlackHole.ry)
-                    if pt:
-                        path.append(pt)
-
-            if len(path) < 2:
-                continue
-            r, g, b, a = color
-            radial_factor = np.exp(- (idx / self.num_lines) ** 2 * 2.5)
-
-            N_GLOW = 5
-            for j in range(N_GLOW):
-                t = j / N_GLOW
-                width = int(2 + t * 10)
-                alpha = int(a * radial_factor * np.exp(-3 * t))
-                cool = int(30 * t)
-
-                pygame.draw.lines(
-                    self.surface,
-                    (min(255, r + cool),
-                    min(255, g + cool),
-                    min(255, b + cool),
-                    alpha),
-                    False,
-                    path,
-                    width
-                )
-
-        
+    def _draw_parabolas(self):
         for idx, (points, color) in enumerate(self.parabola_lines):
+            points = self._orient_points(points)
             path = []
 
             for p in points:
@@ -164,15 +125,13 @@ class BlackHole:
                 pygame.draw.lines(
                     self.surface,
                     (min(255, r + cool),
-                    min(255, g + cool),
-                    min(255, b + cool),
-                    alpha),
+                     min(255, g + cool),
+                     min(255, b + cool),
+                     alpha),
                     False,
                     path,
                     width
                 )
-
-        screen.blit(self.surface, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
 
 
     def glow_circle(self, num_lines, radius):
@@ -318,18 +277,44 @@ class BlackHole:
 
         return Vec3(x, y, z)
     
-    def match_camera(self, v: Vec3):
-        x, y, z = v.x, v.y, v.z
+    def _tilt_points(self, points):
+        """Apply only R_tilt. Returns view-space points (z is depth from
+        the camera relative to BH center, since the billboard makes view
+        orientation = R_tilt · p_model). Use this for any depth-sort or
+        front/back split."""
+        cos_t, sin_t = math.cos(self.tilt_angle), math.sin(self.tilt_angle)
+        out = []
+        for p in points:
+            x, y, z = p.x, p.y, p.z
+            y, z = cos_t * y - sin_t * z, sin_t * y + cos_t * z
+            out.append(Vec3(x, y, z))
+        return out
 
-        y, z = np.matmul(rotation_matrix(BlackHole.rx), np.array([y, z]))
-        z, x = np.matmul(rotation_matrix(BlackHole.ry), np.array([z, x]))
+    def _to_world(self, points):
+        """Rotate view-space points back into world space by R_cam^-1, so
+        get_2d's forward R_cam projects them to their intended view
+        location. Call this after any depth-based splitting."""
+        cos_rx, sin_rx = BlackHole._cos_rx, BlackHole._sin_rx
+        cos_ry, sin_ry = BlackHole._cos_ry, BlackHole._sin_ry
+        out = []
+        for p in points:
+            x, y, z = p.x, p.y, p.z
+            y, z = cos_ry * y + sin_ry * z, -sin_ry * y + cos_ry * z
+            x, z = cos_rx * x + sin_rx * z, -sin_rx * x + cos_rx * z
+            out.append(Vec3(x, y, z))
+        return out
 
-        return Vec3(x, y, z)
+    def _orient_points(self, points):
+        """Convenience: full billboard transform R_cam^-1 · R_tilt."""
+        return self._to_world(self._tilt_points(points))
 
     def split_ellipse_by_depth(self, points):
         """
         Splits ellipse polyline into back-facing (z < 0)
-        and front-facing (z >= 0) segments.
+        and front-facing (z >= 0) segments. At each z=0 crossover the
+        previous point is carried into the new segment so the bridging
+        edge gets drawn — otherwise every ring has a visible radial gap
+        at the two crossover angles.
         """
         back, front = [], []
 
@@ -345,16 +330,14 @@ class BlackHole:
             elif is_front == current_is_front:
                 current.append(p)
             else:
-                # segment switch
                 if current_is_front:
                     front.append(current)
                 else:
                     back.append(current)
 
-                current = [p]
+                current = [current[-1], p]
                 current_is_front = is_front
 
-        # append final
         if current:
             if current_is_front:
                 front.append(current)
@@ -363,31 +346,23 @@ class BlackHole:
 
         return back, front
 
-    def draw_event_horizon_cutout(self, radius_px=22):
+    def draw_event_horizon_cutout(self, radius_px=6.0):
+        """Spherical event horizon silhouette: a circle in screen space
+        (perpendicular to the disk). Radius is a model-space value and
+        scales with 1/dist through the usual perspective factor."""
         center = get_2d(self.pos - BlackHole.camera, BlackHole.rx, BlackHole.ry)
         if not center:
             return
         dist = distance(self.pos, BlackHole.camera)
-        radius = max(2, min(5000, int(radius_px * constants.DEPTH / dist )))
+        radius = max(2, min(5000, int(radius_px * constants.DEPTH / dist)))
 
-        # Subtract alpha+RGB from the glow surface to "punch out" a hole.
-        # Use a slightly larger radius than the visible disk so the back ring doesn't leak.
         cutout = pygame.Surface((radius * 2 + 2, radius * 2 + 2), pygame.SRCALPHA)
         cutout.fill((0, 0, 0, 0))
-
         pygame.draw.circle(cutout, (255, 255, 255, 255), (radius + 1, radius + 1), radius)
 
-
-        self.surface.blit(
-            cutout,
-            (center[0] - radius - 1, center[1] - radius - 1),
-            special_flags= pygame.BLEND_ALPHA_SDL2
-        )
-        self.surface.blit(
-            cutout,
-            (center[0] - radius - 1, center[1] - radius - 1),
-            special_flags= pygame.BLEND_RGBA_SUB
-        )
+        top_left = (center[0] - radius - 1, center[1] - radius - 1)
+        self.surface.blit(cutout, top_left, special_flags=pygame.BLEND_ALPHA_SDL2)
+        self.surface.blit(cutout, top_left, special_flags=pygame.BLEND_RGBA_SUB)
 
     def screen_occludes(self, star_pos):
         """
@@ -475,43 +450,16 @@ class BlackHole:
             int(c1[2] + (c2[2] - c1[2]) * t)
         )
     
-    def update_facing(self):
-        # Direction from BH to camera in world space
-        to_cam = BlackHole.camera - self.pos
-        n = math.sqrt(to_cam.x**2 + to_cam.y**2 + to_cam.z**2)
-        if n == 0:
-            return
-
-        self.face_normal = Vec3(
-            to_cam.x / n,
-            to_cam.y / n,
-            to_cam.z / n
-        )
-
-    def rotate_to_camera(self, v: Vec3):
-        a = self.model_normal
-        b = self.face_normal
-
-        axis = cross(a, b)
-        axis_len = math.sqrt(axis.x**2 + axis.y**2 + axis.z**2)
-
-        # normals already aligned → no rotation
-        if axis_len < 1e-6:
-            return v
-
-        axis = Vec3(axis.x/axis_len, axis.y/axis_len, axis.z/axis_len)
-        cos_theta = max(-1.0, min(1.0, dot(a, b)))
-        theta = math.acos(cos_theta)
-
-        return rodrigues(v, axis, theta)
-
-    
     @classmethod
     def set_camera(cls, camera, rx, ry):
         """Called in main_loop in astronim"""
         cls.camera = camera
         cls.rx = rx
         cls.ry = ry
+        cls._cos_rx = math.cos(rx)
+        cls._sin_rx = math.sin(rx)
+        cls._cos_ry = math.cos(ry)
+        cls._sin_ry = math.sin(ry)
 
 
 
