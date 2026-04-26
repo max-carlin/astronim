@@ -16,6 +16,14 @@ import time
 import traceback
 import weakref
 
+# Importing readline transparently enables arrow-key line editing and command
+# history inside input() / code.InteractiveConsole. On macOS the stdlib
+# `readline` module is a libedit shim, which is sufficient for our needs.
+try:
+    import readline  # noqa: F401
+except ImportError:
+    pass
+
 import pygame
 
 _cmd_queue: "queue.Queue" = queue.Queue()
