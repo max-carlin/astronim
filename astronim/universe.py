@@ -1,5 +1,6 @@
 import os
 import runpy
+import time
 import traceback
 
 import pygame
@@ -190,12 +191,49 @@ class Universe:
             frame += 1
 
         pygame.quit()
-        if self.output_file[-3:] == '.mp4':
-            self.recorder.stop(output_file=self.output_file)
+        self._finalize_recorder()
+
+    def _finalize_recorder(self):
+        '''Stop the recorder and write the final mp4. Idempotent — safe to
+        call even if the recorder was never started.'''
+        if not self.recorder.recording:
+            return
+        if self.output_file.endswith('.mp4'):
+            out = self.output_file
         else:
-            self.recorder.stop(output_file=self.output_file + '.mp4')
-        
-        
+            out = self.output_file + '.mp4'
+        self.recorder.stop(output_file=out)
+
+    def run_scenes(self, scenes):
+        '''Play a sequence of `Scene`s back-to-back as hard cuts. Between scenes:
+          - simulation is cleared (each scene starts fresh)
+          - trail surface is cleared (no bleed-through)
+          - camera state is preserved (next build() can override or inherit)
+
+        `scene.duration` is measured in WALL-CLOCK seconds — when the
+        elapsed time since the scene started exceeds it, we cut to the next
+        scene. The recorder is NOT auto-started; call `u.recorder.start()`
+        beforehand if you want a video.
+        '''
+        for scene in scenes:
+            if not self.running:
+                break
+            self.simulation.clear()
+            self.renderer.trail_surface.fill((0, 0, 0, 0))
+            try:
+                scene.build(self)
+            except Exception:
+                label = f" {scene.name!r}" if scene.name else ""
+                print(f"[astronim] build raised in scene{label}:")
+                traceback.print_exc()
+                continue
+            scene_start = time.monotonic()
+            while self.running and (time.monotonic() - scene_start) < scene.duration:
+                self.tick()
+
+        pygame.quit()
+        self._finalize_recorder()
+
 
     
     def controls(self, keys):
@@ -243,8 +281,48 @@ class Universe:
 
         self._rx_vel += (target_rx - self._rx_vel) * self.rot_smoothing
         self._ry_vel += (target_ry - self._ry_vel) * self.rot_smoothing
-        self.renderer.rx += self._rx_vel
-        self.renderer.ry += self._ry_vel
+        delta_rx = float(self._rx_vel)
+        self.renderer.rx += delta_rx
+        self.renderer.ry += float(self._ry_vel)
+
+        # Q/E orbit the camera around the scene's centroid so the look-at
+        # point stays in frame instead of swinging away. If the scene is
+        # empty, fall back to in-place yaw (just don't move the camera).
+        if abs(delta_rx) > 1e-9:
+            pivot = self._scene_pivot()
+            if pivot is not None:
+                cam = self.renderer.camera
+                dx = cam.x - pivot[0]
+                dz = cam.z - pivot[2]
+                if dx * dx + dz * dz > 1e-6:
+                    # Forward rotates by +delta_rx → camera offset around
+                    # the pivot rotates by -delta_rx (opposite sense).
+                    cos_d = np.cos(delta_rx)
+                    sin_d = np.sin(delta_rx)
+                    cam.x = pivot[0] + cos_d * dx + sin_d * dz
+                    cam.z = pivot[2] - sin_d * dx + cos_d * dz
+
+    def _scene_pivot(self):
+        """Mass-weighted centroid of dynamic objects, or unweighted mean of
+        static objects' positions if there are no dynamic ones. Returns
+        ``None`` for an empty scene."""
+        sim = self.simulation
+        if sim.star_objects:
+            masses = np.asarray(sim.star_masses, dtype=float)
+            positions = np.asarray(sim.star_positions, dtype=float)
+            total = masses.sum()
+            if total > 0:
+                return (positions * masses[:, None]).sum(axis=0) / total
+            return positions.mean(axis=0)
+        if sim.static_objects:
+            pts = [
+                [o.pos.x, o.pos.y, o.pos.z]
+                for o in sim.static_objects
+                if hasattr(o, 'pos')
+            ]
+            if pts:
+                return np.array(pts, dtype=float).mean(axis=0)
+        return None
 
     def _distance_scale(self):
         '''Scale factor for translation speed based on distance to nearest star.
