@@ -210,11 +210,18 @@ class Universe:
           - trail surface is cleared (no bleed-through)
           - camera state is preserved (next build() can override or inherit)
 
-        `scene.duration` is measured in WALL-CLOCK seconds — when the
-        elapsed time since the scene started exceeds it, we cut to the next
-        scene. The recorder is NOT auto-started; call `u.recorder.start()`
-        beforehand if you want a video.
+        `scene.duration` is interpreted differently depending on whether the
+        recorder is running:
+          - RECORDING: counted as frames (duration · 60), so the final mp4
+            has each scene at exactly the requested length regardless of
+            how slow individual ticks are at high resolution.
+          - INTERACTIVE: counted as wall-clock seconds, so previews feel
+            like the right length to a viewer.
+
+        The recorder is NOT auto-started; call `u.recorder.start()` before
+        `run_scenes` if you want a video.
         '''
+        target_fps = 60  # matches recorder.py ffmpeg framerate
         for scene in scenes:
             if not self.running:
                 break
@@ -227,9 +234,17 @@ class Universe:
                 print(f"[astronim] build raised in scene{label}:")
                 traceback.print_exc()
                 continue
-            scene_start = time.monotonic()
-            while self.running and (time.monotonic() - scene_start) < scene.duration:
-                self.tick()
+            if self.recorder.recording:
+                frames = max(1, int(scene.duration * target_fps))
+                for _ in range(frames):
+                    if not self.running:
+                        break
+                    self.tick()
+            else:
+                scene_start = time.monotonic()
+                while (self.running
+                       and (time.monotonic() - scene_start) < scene.duration):
+                    self.tick()
 
         pygame.quit()
         self._finalize_recorder()
@@ -282,25 +297,35 @@ class Universe:
         self._rx_vel += (target_rx - self._rx_vel) * self.rot_smoothing
         self._ry_vel += (target_ry - self._ry_vel) * self.rot_smoothing
         delta_rx = float(self._rx_vel)
+        delta_ry = float(self._ry_vel)
         self.renderer.rx += delta_rx
-        self.renderer.ry += float(self._ry_vel)
+        self.renderer.ry += delta_ry
 
-        # Q/E orbit the camera around the scene's centroid so the look-at
-        # point stays in frame instead of swinging away. If the scene is
-        # empty, fall back to in-place yaw (just don't move the camera).
-        if abs(delta_rx) > 1e-9:
+        # Q/E (yaw) and P/L (pitch) both orbit the camera around the scene's
+        # centroid so the look-at point stays in frame instead of swinging
+        # away. The relationship: when forward rotates by +Δ, the camera
+        # offset around the pivot rotates by −Δ (opposite sense). Empty
+        # scenes or camera-on-pivot fall back to in-place rotation.
+        if abs(delta_rx) > 1e-9 or abs(delta_ry) > 1e-9:
             pivot = self._scene_pivot()
             if pivot is not None:
                 cam = self.renderer.camera
-                dx = cam.x - pivot[0]
-                dz = cam.z - pivot[2]
-                if dx * dx + dz * dz > 1e-6:
-                    # Forward rotates by +delta_rx → camera offset around
-                    # the pivot rotates by -delta_rx (opposite sense).
-                    cos_d = np.cos(delta_rx)
-                    sin_d = np.sin(delta_rx)
-                    cam.x = pivot[0] + cos_d * dx + sin_d * dz
-                    cam.z = pivot[2] - sin_d * dx + cos_d * dz
+                if abs(delta_rx) > 1e-9:
+                    dx = cam.x - pivot[0]
+                    dz = cam.z - pivot[2]
+                    if dx * dx + dz * dz > 1e-6:
+                        cos_d = np.cos(delta_rx)
+                        sin_d = np.sin(delta_rx)
+                        cam.x = pivot[0] + cos_d * dx + sin_d * dz
+                        cam.z = pivot[2] - sin_d * dx + cos_d * dz
+                if abs(delta_ry) > 1e-9:
+                    dy = cam.y - pivot[1]
+                    dz = cam.z - pivot[2]
+                    if dy * dy + dz * dz > 1e-6:
+                        cos_d = np.cos(delta_ry)
+                        sin_d = np.sin(delta_ry)
+                        cam.y = pivot[1] + cos_d * dy + sin_d * dz
+                        cam.z = pivot[2] - sin_d * dy + cos_d * dz
 
     def _scene_pivot(self):
         """Mass-weighted centroid of dynamic objects, or unweighted mean of
