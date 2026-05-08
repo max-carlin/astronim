@@ -62,6 +62,51 @@ def _ease(t: float, kind: str) -> float:
 
 # ---------- Particle extraction ----------
 
+def _text_particles(text_obj) -> np.ndarray:
+    """Sample a Text object as a point cloud by rasterizing its glyphs to
+    a temp surface and emitting one particle per opaque pixel. Each
+    pixel maps to a local (x, y, 0) offset (1 world-unit per pixel),
+    centered on text_obj.pos. Returns an (N, 6) array."""
+    if not pygame.font.get_init():
+        pygame.font.init()
+    msg = text_obj.current_message if (
+        getattr(text_obj, 'type_out', False) and text_obj.current_message
+    ) else text_obj.message
+    if not msg:
+        return np.zeros((0, 6), dtype=float)
+    font = pygame.font.SysFont('Times New Roman', int(text_obj.base_size))
+    color = tuple(int(c) for c in text_obj.color[:3])
+    surf = font.render(msg, True, color)
+    w, h = surf.get_size()
+    if w == 0 or h == 0:
+        return np.zeros((0, 6), dtype=float)
+
+    # Pixel mask: antialiased text returns SRCALPHA; otherwise treat
+    # any pixel with non-zero RGB as a glyph pixel.
+    if surf.get_flags() & pygame.SRCALPHA:
+        mask = pygame.surfarray.array_alpha(surf) > 16
+    else:
+        rgb = pygame.surfarray.array3d(surf)
+        mask = rgb.sum(axis=-1) > 16
+
+    xs_idx, ys_idx = np.where(mask)
+    if xs_idx.size == 0:
+        return np.zeros((0, 6), dtype=float)
+
+    cx, cy = w / 2.0, h / 2.0
+    local_x = xs_idx.astype(float) - cx
+    # screen-y goes down, world-y goes up — flip so the text isn't upside-down
+    local_y = cy - ys_idx.astype(float)
+
+    rgb = np.tile(np.asarray(color, dtype=float), (xs_idx.size, 1))
+    return np.stack([
+        local_x + text_obj.pos.x,
+        local_y + text_obj.pos.y,
+        np.full_like(local_x, text_obj.pos.z),
+        rgb[:, 0], rgb[:, 1], rgb[:, 2],
+    ], axis=-1)
+
+
 def _extract_particles(simulation, max_particles: int) -> np.ndarray:
     """Walk simulation.star_objects + .static_objects and produce a single
     (N, 6) float array of [x, y, z, r, g, b] rows. Capped at max_particles
@@ -72,6 +117,7 @@ def _extract_particles(simulation, max_particles: int) -> np.ndarray:
     from astronim.objects.grid import Grid
     from astronim.objects.star import Star
     from astronim.objects.blackhole import BlackHole
+    from astronim.objects.text import Text
 
     chunks: list = []
 
@@ -79,6 +125,11 @@ def _extract_particles(simulation, max_particles: int) -> np.ndarray:
     for obj in objs:
         if isinstance(obj, BlackHole):
             chunks.append(obj.morph_particles())
+
+        elif isinstance(obj, Text):
+            text_pts = _text_particles(obj)
+            if text_pts.size:
+                chunks.append(text_pts)
 
         elif isinstance(obj, Galaxy):
             stars = getattr(obj, 'positions', None) or getattr(obj, 'stars', None)
@@ -378,15 +429,15 @@ class _MorphRenderer:
                 return 1.0 if t >= end else 0.0
             return max(0.0, min(1.0, (t - start) / (end - start)))
 
-        # Source is held at full opacity until the target begins to ramp
-        # in, then crossfades directly with the target over the same
-        # window. Particles start at a high baseline (0.65) from frame
-        # zero of the transition so they're already visibly riding on
-        # top of the source — no dim ramp-in. They reach full quickly
-        # by e=0.10 and hold until the end fade. The end window
-        # [0.70, 0.85] (target ramp + particle fade) is unchanged.
+        # Particles ramp from 0.65 baseline to full by e=0.10 — they
+        # appear immediately on top of the source so source + particles
+        # are both visible together. Source then holds at full until
+        # e=0.45, after which it fades out alone over [0.45, 0.60]
+        # while particles stay at full. From e=0.60 to 0.70 the screen
+        # is just particles. Tail end [0.70, 0.85] is unchanged: target
+        # ramps in additively and particles fade out.
         target_factor = _fade(e, 0.70, 0.85)
-        source_factor = 1.0 - target_factor
+        source_factor = 1.0 - _fade(e, 0.45, 0.60)
         particle_factor = min(
             0.65 + 0.35 * _fade(e, 0.0, 0.10),
             1.0 - _fade(e, 0.70, 0.85),
