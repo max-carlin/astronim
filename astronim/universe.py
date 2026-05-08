@@ -205,49 +205,87 @@ class Universe:
         self.recorder.stop(output_file=out)
 
     def run_scenes(self, scenes):
-        '''Play a sequence of `Scene`s back-to-back as hard cuts. Between scenes:
-          - simulation is cleared (each scene starts fresh)
-          - trail surface is cleared (no bleed-through)
-          - camera state is preserved (next build() can override or inherit)
+        '''Play a sequence of `Scene`s back-to-back. `Transition` items
+        between Scenes produce a particle-morph cross-cut.
 
-        `scene.duration` is interpreted differently depending on whether the
-        recorder is running:
-          - RECORDING: counted as frames (duration · 60), so the final mp4
-            has each scene at exactly the requested length regardless of
-            how slow individual ticks are at high resolution.
-          - INTERACTIVE: counted as wall-clock seconds, so previews feel
-            like the right length to a viewer.
+        Per-Scene durations are interpreted as:
+          - RECORDING: frames (duration · 60), so the final mp4 has each
+            scene at exactly the requested length regardless of tick speed.
+          - INTERACTIVE: wall-clock seconds.
 
         The recorder is NOT auto-started; call `u.recorder.start()` before
         `run_scenes` if you want a video.
         '''
-        target_fps = 60  # matches recorder.py ffmpeg framerate
-        for scene in scenes:
+        from .scene import Transition, setup_morph_transition
+        target_fps = 60
+
+        i = 0
+        while i < len(scenes):
             if not self.running:
                 break
-            self.simulation.clear()
-            self.renderer.trail_surface.fill((0, 0, 0, 0))
-            try:
-                scene.build(self)
-            except Exception:
-                label = f" {scene.name!r}" if scene.name else ""
-                print(f"[astronim] build raised in scene{label}:")
-                traceback.print_exc()
+            item = scenes[i]
+
+            if isinstance(item, Transition):
+                # Find the next non-Transition item to morph TOWARD
+                next_scene = next(
+                    (s for s in scenes[i + 1:] if not isinstance(s, Transition)),
+                    None,
+                )
+                if next_scene is None:
+                    i += 1
+                    continue   # trailing transition with nothing to morph into
+
+                try:
+                    morph = setup_morph_transition(self, item, next_scene)
+                except Exception:
+                    label = f" {item.name!r}" if item.name else ""
+                    print(f"[astronim] morph setup failed in transition{label}:")
+                    traceback.print_exc()
+                    i += 1
+                    continue
+
+                self.simulation.clear()
+                self.renderer.trail_surface.fill((0, 0, 0, 0))
+                # Pace by frame count when recording (exact mp4 timing) or
+                # by wall-clock when interactive (so the morph completes
+                # within `duration` regardless of actual tick rate).
+                if self.recorder.recording:
+                    morph._total_frames = max(1, int(item.duration * target_fps))
+                self.simulation.add(morph)
+                self._tick_for(item.duration, target_fps)
+                i += 1
                 continue
-            if self.recorder.recording:
-                frames = max(1, int(scene.duration * target_fps))
-                for _ in range(frames):
-                    if not self.running:
-                        break
-                    self.tick()
-            else:
-                scene_start = time.monotonic()
-                while (self.running
-                       and (time.monotonic() - scene_start) < scene.duration):
-                    self.tick()
+
+            # Regular Scene
+            self._run_one_scene(item, target_fps)
+            i += 1
 
         pygame.quit()
         self._finalize_recorder()
+
+    def _run_one_scene(self, scene, target_fps):
+        self.simulation.clear()
+        self.renderer.trail_surface.fill((0, 0, 0, 0))
+        try:
+            scene.build(self)
+        except Exception:
+            label = f" {scene.name!r}" if scene.name else ""
+            print(f"[astronim] build raised in scene{label}:")
+            traceback.print_exc()
+            return
+        self._tick_for(scene.duration, target_fps)
+
+    def _tick_for(self, duration, target_fps):
+        if self.recorder.recording:
+            frames = max(1, int(duration * target_fps))
+            for _ in range(frames):
+                if not self.running:
+                    break
+                self.tick()
+        else:
+            start = time.monotonic()
+            while self.running and (time.monotonic() - start) < duration:
+                self.tick()
 
 
     
