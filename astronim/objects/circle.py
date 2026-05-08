@@ -1,6 +1,6 @@
 import pygame
 from astronim.utils.tools import distance, get_2d, Vec3
-from astronim.utils.constants import DEPTH, WIDTH, HEIGHT
+from astronim.utils import constants
 from typing import Callable, Optional
 
 class Circle: 
@@ -33,7 +33,7 @@ class Circle:
              
         pos = get_2d(self.center - Circle.camera, Circle.rx, Circle.ry)
         dist = distance(self.center, Circle.camera)
-        radius = max(2, min(5000, int(self.base_radius * DEPTH / dist )))
+        radius = max(2, min(5000, int(self.base_radius * constants.DEPTH / dist )))
         
         if pos is None: 
             return

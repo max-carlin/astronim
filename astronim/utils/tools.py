@@ -2,7 +2,7 @@
 import numpy as np
 import math
 from dataclasses import dataclass
-from astronim.utils.constants import WIDTH, HEIGHT, DEPTH
+from astronim.utils import constants
 
 
 #Settings
@@ -78,11 +78,11 @@ def get_2d(pos, rx, ry):
     if pos.z <= 0.1: 
         return None
     
-    pos.x = pos.x* DEPTH/pos.z
-    pos.y = pos.y * DEPTH / pos.z
+    pos.x = pos.x* constants.DEPTH/pos.z
+    pos.y = pos.y * constants.DEPTH / pos.z
 
-    pos.x += WIDTH / 2
-    pos.y = HEIGHT / 2 - pos.y
+    pos.x += constants.WIDTH / 2
+    pos.y = constants.HEIGHT / 2 - pos.y
 
     
     return (int(pos.x), int(pos.y))

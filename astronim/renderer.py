@@ -85,56 +85,47 @@ class Renderer:
         order = []
 
 
-        for obj in simulation.star_objects: 
-            obj.set_camera(self.camera, self.rx, self.ry)
-            dist = distance(obj.pos, self.camera)
-            order.append(dist)
-
+        # Unified back-to-front depth sort over both dynamic and static objects.
+        # Objects without `pos` (defensive — none in the codebase today) sort
+        # to the back via float('inf') so they render first.
+        all_objects = simulation.star_objects + simulation.static_objects
+        distances = []
+        for obj in all_objects:
+            pos = getattr(obj, 'pos', None)
+            distances.append(
+                distance(pos, self.camera) if pos is not None else float('inf')
+            )
             if isinstance(obj, BlackHole):
                 self.csv_buffer.append((obj.pos.x, obj.pos.y, obj.pos.z))
 
-        stars_sorted = np.array(simulation.star_objects)[np.argsort(order)[::-1]].tolist()
+        # `kind='stable'` preserves insertion order for ties — important so a
+        # user-ordered (background, foreground) pair renders predictably.
+        order = np.argsort(distances, kind='stable')[::-1]
 
-
-        # for obj in stars_sorted: 
-        #     obj.set_camera(self.camera, self.rx, self.ry)
-        #     obj.draw(self.screen)
-
-        #     if obj.trail: 
-        #         obj.draw_trail(self.screen)
-        ##############################################
-        # find the black hole (assume one for now)
-
+        # BH used by the existing star-behind-BH occlusion check
         black_holes = [o for o in simulation.star_objects if isinstance(o, BlackHole)]
         bh = black_holes[0] if black_holes else None
 
-        for obj in stars_sorted:
+        for idx in order:
+            obj = all_objects[idx]
             obj.set_camera(self.camera, self.rx, self.ry)
 
-            if bh and isinstance(obj, Star):
+            if bh is not None and isinstance(obj, Star):
                 if bh.screen_occludes(obj.pos):
                     continue  # STAR IS HIDDEN
 
             obj.draw(self.screen)
 
-            if obj.trail:
-                # obj.draw_trail(self.screen)
+            if getattr(obj, 'trail', False):
                 obj.draw_trail_color(self.trail_surface, self.speed_max, self.speed_min)
 
+        # Trails composited last, on top of every depth-sorted object.
         self.screen.blit(self.trail_surface, (0, 0))
-
-
-        for obj in simulation.static_objects: 
-            obj.set_camera(self.camera, self.rx, self.ry)
-            obj.draw(self.screen)
 
     
         if self.camera_movement_called:
-            
-            self.camera_function(self.camera)
-            
 
-        pygame.display.flip()
+            self.camera_function(self.camera)
 
         # self.csv_frame_counter += 1
 

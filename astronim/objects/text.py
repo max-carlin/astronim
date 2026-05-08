@@ -1,6 +1,6 @@
 import pygame
 from astronim.utils.tools import distance, get_2d, Vec3
-from astronim.utils.constants import DEPTH, WIDTH, HEIGHT
+from astronim.utils import constants
 import time
 
 class Text: 
@@ -19,7 +19,7 @@ class Text:
     def draw(self, screen): 
 
         dist = distance(self.pos, Text.camera)
-        size = max(2, min(5000, int(self.base_size * DEPTH / dist)))
+        size = max(2, min(5000, int(self.base_size * constants.DEPTH / dist)))
         font = pygame.font.SysFont('Times New Roman', size)
 
         if self.type_out: 
@@ -29,7 +29,7 @@ class Text:
             text_surface = font.render(self.message, True, self.color)
 
         textRect = text_surface.get_rect()
-        textRect.center = (WIDTH //2, HEIGHT//2)
+        textRect.center = (constants.WIDTH //2, constants.HEIGHT//2)
         # textRect.center = (3840 //2, 2160//2)
         #Change width and heigth back!!!!
 

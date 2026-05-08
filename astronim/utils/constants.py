@@ -1,12 +1,7 @@
 #Settings
-WIDTH =1920 #3840 
-HEIGHT = 1080 #2160 
+# WIDTH and HEIGHT are populated by Universe.__init__ (and updated on resize).
+# Configure resolution via Universe(width=..., height=...), not here.
 DEPTH = 500
-
-# WIDTH = 3840 
-# HEIGHT = 2160 
-
-
 
 G = 6.674e-11
 AU = 1.496e11
