@@ -468,6 +468,50 @@ class BlackHole:
                                (radius, radius), r)
         return surf
 
+    # ---------- Particle stand-in (used by scene-transition morphs) ----------
+
+    def morph_particles(self, n_halo: int = 500, rng=None):
+        """Return an (M, 6) numpy array [x, y, z, r, g, b] sampling the BH as
+        a particle cloud. Used by scene-morph transitions only — the BH's
+        actual rendering is procedural and doesn't natively decompose to
+        points. We sample disk-quad vertices (with disk-shader colors) plus
+        a uniform sphere of halo particles at faint warm color so the BH
+        "dissolves" into the morph rather than vanishing."""
+        if rng is None:
+            rng = np.random.default_rng(0)
+        # Disk-quad vertices in world coords: R_disk · vertex_local + self.pos
+        verts_view = self._verts_local @ self._M_disk.T  # (Nr+1, Nt+1, 3)
+        # Each vertex's color sampled at the nearest quad shader value
+        rgba = self._disk_shader(self._quad_R, self._quad_T)  # (Nr, Nt, 4)
+        # Pad shader to (Nr+1, Nt+1, 4) by edge-replicating
+        Nr1, Nt1 = verts_view.shape[:2]
+        col = np.zeros((Nr1, Nt1, 3), dtype=float)
+        col[:-1, :-1] = rgba[..., :3]
+        col[-1, :-1] = rgba[-1, :, :3]
+        col[:-1, -1] = rgba[:, -1, :3]
+        col[-1, -1] = rgba[-1, -1, :3]
+        verts_world = verts_view + np.array([self.pos.x, self.pos.y, self.pos.z])
+        disk_pts = np.concatenate([
+            verts_world.reshape(-1, 3),
+            col.reshape(-1, 3),
+        ], axis=-1)
+
+        # Halo: uniform points in a sphere of radius halo_extent
+        if n_halo > 0:
+            r = self.halo_extent * np.cbrt(rng.uniform(0.0, 1.0, n_halo))
+            phi = rng.uniform(0.0, 2.0 * np.pi, n_halo)
+            cth = rng.uniform(-1.0, 1.0, n_halo)
+            sth = np.sqrt(np.clip(1.0 - cth * cth, 0.0, 1.0))
+            x = r * sth * np.cos(phi) + self.pos.x
+            y = r * sth * np.sin(phi) + self.pos.y
+            z = r * cth + self.pos.z
+            faint = np.array([60.0, 50.0, 35.0])  # warm dim halo color
+            halo_pts = np.stack([x, y, z, np.full(n_halo, faint[0]),
+                                 np.full(n_halo, faint[1]),
+                                 np.full(n_halo, faint[2])], axis=-1)
+            return np.concatenate([disk_pts, halo_pts], axis=0)
+        return disk_pts
+
     # ---------- Renderer-facing utilities ----------
 
     def screen_occludes(self, star_pos):

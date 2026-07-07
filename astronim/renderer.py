@@ -46,6 +46,7 @@ class Renderer:
         self.csv_buffer = []
         self.csv_flush_interval = 300   # write every 300 frames (5 seconds at 60 FPS)
         self.csv_frame_counter = 0
+        self.bg_color = (0, 0, 0)
 
         # if not os.path.exists("position.csv"):
         #     with open("position.csv", "w") as f:
@@ -61,7 +62,7 @@ class Renderer:
         simulation : Simulation
             The current simulation containing star_objects and static_objects.
         '''
-        self.screen.fill((0, 0, 0))
+        self.screen.fill(self.bg_color)
         self.trail_surface.fill((0, 0, 0, 0))
         #compute min/max speeds this frame
         min_s = float("inf")

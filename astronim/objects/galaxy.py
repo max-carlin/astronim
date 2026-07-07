@@ -55,12 +55,13 @@ class Galaxy:
         "Z_THICKNESS": 5 
     }
 
-    def __init__(self, pos:Vec3, galaxy_type: str = 'spiral_galaxy', 
-                 color = None, rotation: Vec3 = Vec3(0, 0, 0), **kwargs):
-        # init function should draw the galaxy using only these args 
+    def __init__(self, pos:Vec3, galaxy_type: str = 'spiral_galaxy',
+                 color = None, rotation: Vec3 = Vec3(0, 0, 0),
+                 seed: int = None, **kwargs):
+        # init function should draw the galaxy using only these args
         self.galaxy_type = galaxy_type
         self.color = color
-        
+
         self.pos = Vec3(pos.x, pos.y, pos.z)
         self.rotation = rotation
 
@@ -68,13 +69,29 @@ class Galaxy:
         self.params = self.DEFAULTS.copy()
         self.params.update(kwargs)
 
-        types = {'spiral_galaxy': self.spiral_positions(), 
-                 'irregular_galaxy':self.irregular_positions(), 
-                 "elliptical_galaxy":self.elliptical_positions()}
-        stars = types[galaxy_type]
-        # Apply rotation
-        if any([self.rotation.x, self.rotation.y, self.rotation.z]):
-            stars = [[self.rotate_vector(star[0]), star[1]] for star in stars]
+        # Optional reproducibility: snapshot the global RNG state, seed
+        # both numpy + Python random for the duration of star
+        # generation, then restore. Lets two Galaxy instances built
+        # with the same seed produce identical star placements without
+        # leaking state into the rest of the program.
+        _np_state = _py_state = None
+        if seed is not None:
+            _np_state = np.random.get_state()
+            _py_state = random.getstate()
+            np.random.seed(seed)
+            random.seed(seed)
+        try:
+            types = {'spiral_galaxy': self.spiral_positions(),
+                     'irregular_galaxy':self.irregular_positions(),
+                     "elliptical_galaxy":self.elliptical_positions()}
+            stars = types[galaxy_type]
+            # Apply rotation
+            if any([self.rotation.x, self.rotation.y, self.rotation.z]):
+                stars = [[self.rotate_vector(star[0]), star[1]] for star in stars]
+        finally:
+            if _np_state is not None:
+                np.random.set_state(_np_state)
+                random.setstate(_py_state)
 
         self.positions = stars
 

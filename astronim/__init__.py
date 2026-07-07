@@ -20,7 +20,8 @@ from .objects import *
 from .objects import __all__ as _object_names
 from .utils.tools import Vec3
 from .repl import interactive
-from .scene import Scene
+from .scene import Scene, Transition
 
 
-__all__ = ["Universe", "Vec3", "Scene", "interactive", *_object_names]
+__all__ = ["Universe", "Vec3", "Scene", "Transition", "interactive",
+           *_object_names]
