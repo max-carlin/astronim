@@ -41,16 +41,34 @@ def rotation_matrix(theta):
     return np.array([[np.cos(theta), -np.sin(theta)], 
                         [np.sin(theta), np.cos(theta)]])
 
+# Module-level camera roll (rotation around the view axis). Scenes set
+# this via set_camera_roll(); get_2d and any other projection code reads
+# it directly. Defaults to 0 so existing behavior is unchanged.
+_camera_roll = 0.0
+
+
+def set_camera_roll(angle: float) -> None:
+    """Set the global camera-roll angle (radians). Applied AFTER the
+    rx/ry rotations in get_2d, i.e. as a rotation around the camera's
+    forward (view) axis."""
+    global _camera_roll
+    _camera_roll = float(angle)
+
+
+def get_camera_roll() -> float:
+    return _camera_roll
+
+
 #Getting 2d Point coordinates from 3d vectors
-def get_2d(pos, rx, ry): 
+def get_2d(pos, rx, ry):
 
     '''
-    Takes 3D coordinates and converts them into 2d. 
+    Takes 3D coordinates and converts them into 2d.
 
     parameters
     ----------
     pos : Vec3
-        3 dimensional vector containing x, y, z coordinates respectively. 
+        3 dimensional vector containing x, y, z coordinates respectively.
     rx : float
         rotation angle about x-axis, in radians
     ry : float
@@ -58,14 +76,14 @@ def get_2d(pos, rx, ry):
 
     returns
     -------
-    2-dimensional (x, y) coordinates as integers. 
+    2-dimensional (x, y) coordinates as integers.
 
 
-    Mainly taken from here under the "In Two Dimensions section": 
+    Mainly taken from here under the "In Two Dimensions section":
     https://en.wikipedia.org/wiki/Rotation_matrix#Common_2D_rotations
 
-    And here under "Weak perspective projection" for depth stuff: 
-    https://en.m.wikipedia.org/wiki/3D_projection 
+    And here under "Weak perspective projection" for depth stuff:
+    https://en.m.wikipedia.org/wiki/3D_projection
     '''
 
     #horizonatl rotation (about x-axis)
@@ -75,16 +93,25 @@ def get_2d(pos, rx, ry):
     pos.y, pos.z = np.matmul(rotation_matrix(ry), np.array([pos.y, pos.z]))
 
     #Get rid of points behind the camera
-    if pos.z <= 0.1: 
+    if pos.z <= 0.1:
         return None
-    
+
+    # Apply camera roll (rotation around view axis), in projection-plane
+    # coords prior to perspective divide. Zero by default → no-op.
+    if _camera_roll != 0.0:
+        c = np.cos(_camera_roll); s = np.sin(_camera_roll)
+        new_x = c * pos.x - s * pos.y
+        new_y = s * pos.x + c * pos.y
+        pos.x = new_x
+        pos.y = new_y
+
     pos.x = pos.x* constants.DEPTH/pos.z
     pos.y = pos.y * constants.DEPTH / pos.z
 
     pos.x += constants.WIDTH / 2
     pos.y = constants.HEIGHT / 2 - pos.y
 
-    
+
     return (int(pos.x), int(pos.y))
 
 

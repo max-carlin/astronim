@@ -191,14 +191,17 @@ def _sandbox_build(u, build_fn):
     capture the would-be next scene's particle state without disturbing
     the live one. Restores u.simulation and the camera before returning.
 
-    Returns (sandbox_simulation, target_camera_tuple).
+    Returns (sandbox_simulation, target_camera_tuple) where the camera
+    tuple is (camera, rx, ry, roll).
     """
     from astronim.simulation import Simulation
+    from astronim.utils.tools import get_camera_roll, set_camera_roll
     saved_sim = u.simulation
     saved_cam = (
         Vec3(u.renderer.camera.x, u.renderer.camera.y, u.renderer.camera.z),
         u.renderer.rx,
         u.renderer.ry,
+        get_camera_roll(),
     )
     u.simulation = Simulation()
     try:
@@ -208,12 +211,14 @@ def _sandbox_build(u, build_fn):
             Vec3(u.renderer.camera.x, u.renderer.camera.y, u.renderer.camera.z),
             u.renderer.rx,
             u.renderer.ry,
+            get_camera_roll(),
         )
     finally:
         u.simulation = saved_sim
         u.renderer.camera = saved_cam[0]
         u.renderer.rx = saved_cam[1]
         u.renderer.ry = saved_cam[2]
+        set_camera_roll(saved_cam[3])
     return sandboxed, target_cam
 
 
@@ -230,12 +235,15 @@ def setup_morph_transition(u, transition, next_scene):
     Caller (Universe.run_scenes) is responsible for clearing the
     simulation and adding the returned morph to it.
     """
+    from astronim.utils.tools import get_camera_roll, set_camera_roll
+
     # 1. Capture source state BEFORE any side-effects: particles and the
     #    last rendered frame the user just saw.
     src_particles = _extract_particles(u.simulation, transition.max_particles)
     src_cam = (
         Vec3(u.renderer.camera.x, u.renderer.camera.y, u.renderer.camera.z),
         u.renderer.rx, u.renderer.ry,
+        get_camera_roll(),
     )
     source_surface = u.renderer.screen.copy()
 
@@ -252,11 +260,13 @@ def setup_morph_transition(u, transition, next_scene):
     saved_cam = (
         Vec3(u.renderer.camera.x, u.renderer.camera.y, u.renderer.camera.z),
         u.renderer.rx, u.renderer.ry,
+        get_camera_roll(),
     )
     u.simulation = sandbox
     u.renderer.camera = tgt_cam[0]
     u.renderer.rx = tgt_cam[1]
     u.renderer.ry = tgt_cam[2]
+    set_camera_roll(tgt_cam[3])
     try:
         u.renderer.draw(sandbox)
         target_surface = u.renderer.screen.copy()
@@ -265,6 +275,7 @@ def setup_morph_transition(u, transition, next_scene):
         u.renderer.camera = saved_cam[0]
         u.renderer.rx = saved_cam[1]
         u.renderer.ry = saved_cam[2]
+        set_camera_roll(saved_cam[3])
         # Restore the source frame on the live screen so the next tick
         # blends from it cleanly (the target render just above clobbered it).
         u.renderer.screen.blit(source_surface, (0, 0))
@@ -312,21 +323,28 @@ class _MorphRenderer:
                  src_camera, tgt_camera,
                  duration, ease="smoothstep", renderer=None,
                  source_surface=None, target_surface=None):
-        # Pad/truncate to a common length so we have 1:1 pairings
-        n = min(len(src_particles), len(tgt_particles))
-        if n == 0:
-            # Degenerate: just hold one of the clouds (or nothing) for `duration`.
+        # Both clouds end up at n = max(len(src), len(tgt)) so each
+        # endpoint fully describes its scene. The denser side is used
+        # as-is; the sparser side is sampled WITH REPLACEMENT to
+        # inflate to n. The upstream cap (transition.max_particles in
+        # _extract_particles) bounds n.
+        n_src = len(src_particles)
+        n_tgt = len(tgt_particles)
+        n = max(n_src, n_tgt)
+        # Either side empty → can't oversample from nothing. Fall back
+        # to no particle layer; the source/target backdrop crossfade
+        # still handles the visual transition.
+        if n == 0 or n_src == 0 or n_tgt == 0:
             self.src = np.zeros((0, 6), dtype=float)
             self.tgt = np.zeros((0, 6), dtype=float)
         else:
             rng = np.random.default_rng(0)
             src = src_particles
             tgt = tgt_particles
-            if len(src) > n:
-                src = src[rng.choice(len(src), n, replace=False)]
-            if len(tgt) > n:
-                tgt = tgt[rng.choice(len(tgt), n, replace=False)]
-            # Random shuffle one side so pairing isn't index-correlated
+            if n_src < n:
+                src = src[rng.choice(n_src, n, replace=True)]
+            if n_tgt < n:
+                tgt = tgt[rng.choice(n_tgt, n, replace=True)]
             tgt = tgt[rng.permutation(n)]
             self.src = src
             self.tgt = tgt
@@ -338,6 +356,11 @@ class _MorphRenderer:
 
         self._src_cam = src_camera
         self._tgt_cam = tgt_camera
+        # Roll is the 4th element of the camera tuple. Tolerate older
+        # 3-tuples (treat as roll=0) just in case anything builds the
+        # renderer manually with the old shape.
+        self._src_roll = src_camera[3] if len(src_camera) > 3 else 0.0
+        self._tgt_roll = tgt_camera[3] if len(tgt_camera) > 3 else 0.0
         self._duration = max(1e-6, float(duration))
         self._ease = ease
         self._renderer = renderer
@@ -395,6 +418,7 @@ class _MorphRenderer:
         return _ease(min(1.0, max(0.0, t)), self._ease)
 
     def draw(self, screen):
+        from astronim.utils.tools import set_camera_roll
         e = self._progress()
 
         # Camera lerp — write back to the live renderer
@@ -407,6 +431,8 @@ class _MorphRenderer:
             )
             self._renderer.rx = (1 - e) * self._src_cam[1] + e * self._tgt_cam[1]
             self._renderer.ry = (1 - e) * self._src_cam[2] + e * self._tgt_cam[2]
+            # Roll is the third rotation axis; same lerp as rx/ry.
+            set_camera_roll((1 - e) * self._src_roll + e * self._tgt_roll)
 
         # Crossfade schedule. Quick handoffs at the start and end so we
         # don't dwell in dim states; at every moment at least ONE of
@@ -486,6 +512,19 @@ class _MorphRenderer:
         y2 = cos_ry * y - sin_ry * z
         z = sin_ry * y + cos_ry * z
         y = y2
+
+        # Camera roll around the view axis — match the rest of the
+        # rendering pipeline (get_2d in tools.py, DarkMatter's inline
+        # batch). Without this the morph particles project unrolled
+        # while the source/target backdrops already have roll baked
+        # in, causing an apparent orientation flip.
+        from astronim.utils.tools import get_camera_roll
+        roll = get_camera_roll()
+        if roll != 0.0:
+            cos_rz = math.cos(roll); sin_rz = math.sin(roll)
+            x2 = cos_rz * x - sin_rz * y
+            y = sin_rz * x + cos_rz * y
+            x = x2
 
         valid = z > 0.1
         if not valid.any():

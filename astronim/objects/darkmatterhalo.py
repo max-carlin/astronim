@@ -18,7 +18,7 @@ import math
 import pygame
 import numpy as np
 
-from astronim.utils.tools import get_2d, Vec3, distance
+from astronim.utils.tools import get_2d, Vec3, distance, get_camera_roll
 from astronim.utils import constants
 
 
@@ -206,6 +206,15 @@ class DarkMatter:
         y2 = cos_ry * y - sin_ry * z
         z = sin_ry * y + cos_ry * z
         y = y2
+
+        # Camera roll around view axis (rotates the projection-plane
+        # coords (x, y) prior to perspective divide). Zero by default.
+        roll = get_camera_roll()
+        if roll != 0.0:
+            cos_rz, sin_rz = math.cos(roll), math.sin(roll)
+            x2 = cos_rz * x - sin_rz * y
+            y = sin_rz * x + cos_rz * y
+            x = x2
 
         valid = z > 0.1
         if not valid.any():
