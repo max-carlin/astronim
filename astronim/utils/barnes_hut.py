@@ -93,12 +93,12 @@ def compute_force(node, pos, accel):
 
     r = node.com - pos
     dist2 = np.dot(r, r) + 1e-30
-    inv_dist3 = 1.0 / ((dist2 + EPS2) * np.sqrt(dist2 + EPS2))
-    accel += G * node.mass * r * inv_dist3
+    dist = np.sqrt(dist2)
 
-    # Opening criterion unchanged
-    dist = np.sqrt(dist2) + 1e-30
+    # A node contributes only when it terminates the recursion: it is a
+    # leaf, or far enough away to approximate by its center of mass.
     if node.is_leaf or (node.half_size / dist) < THETA:
+        inv_dist3 = 1.0 / ((dist2 + EPS2) * np.sqrt(dist2 + EPS2))
         accel += G * node.mass * r * inv_dist3
         return
 
