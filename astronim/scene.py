@@ -118,6 +118,8 @@ def _extract_particles(simulation, max_particles: int) -> np.ndarray:
     from astronim.objects.star import Star
     from astronim.objects.blackhole import BlackHole
     from astronim.objects.text import Text
+    from astronim.objects.asciitext import AsciiText
+    from astronim.objects.PlanetaryNebula import PlanetaryNebula
 
     chunks: list = []
 
@@ -130,6 +132,16 @@ def _extract_particles(simulation, max_particles: int) -> np.ndarray:
             text_pts = _text_particles(obj)
             if text_pts.size:
                 chunks.append(text_pts)
+
+        elif isinstance(obj, AsciiText):
+            ascii_pts = obj.morph_particles()
+            if ascii_pts.size:
+                chunks.append(ascii_pts)
+
+        elif isinstance(obj, PlanetaryNebula):
+            nebula_pts = obj.morph_particles()
+            if nebula_pts.size:
+                chunks.append(nebula_pts)
 
         elif isinstance(obj, Galaxy):
             stars = getattr(obj, 'positions', None) or getattr(obj, 'stars', None)

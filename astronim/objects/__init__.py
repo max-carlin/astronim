@@ -8,8 +8,11 @@ from .grid import Grid
 from .circle import Circle
 from .darkmatterhalo import DarkMatter
 from .dynamicgalaxy import DynamicGalaxy
+from .asciitext import AsciiText
+from .PlanetaryNebula import PlanetaryNebula
 
 
-__all__ = ["Star", "Galaxy", "BlackHole", "Text", 
+__all__ = ["Star", "Galaxy", "BlackHole", "Text",
            "LineBetween", "Graph", "Grid", "Circle",
-           "DarkMatter", "DynamicGalaxy"]
+           "DarkMatter", "DynamicGalaxy", "AsciiText",
+           "PlanetaryNebula"]
