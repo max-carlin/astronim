@@ -903,8 +903,16 @@ class AsciiText:
 
     def morph_particles(self):
         """(N, 6) [x, y, z, r, g, b] rows for scene-morph transitions —
-        one particle per currently-visible lit banner cell."""
+        one particle per currently-visible lit banner cell.
+
+        A type-out text that hasn't revealed anything yet (e.g. a freshly
+        built scene being sampled as a morph TARGET) falls back to the
+        FULL letter grid — same behavior as Text via _text_particles —
+        so the morph flies particles into the complete word rather than
+        into nothing."""
         k = self._visible_cell_count()
+        if k == 0 and self.type_out:
+            k = len(self._local)
         if k == 0:
             return np.zeros((0, 6), dtype=float)
         xyz = self._local[:k] + np.array(

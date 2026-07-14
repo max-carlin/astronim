@@ -275,7 +275,11 @@ def setup_morph_transition(u, transition, next_scene):
         get_camera_roll(),
     )
     u.simulation = sandbox
-    u.renderer.camera = tgt_cam[0]
+    # COPY the captured camera, never alias it: renderer.draw fires any
+    # registered camera-animation callback, and callbacks that mutate the
+    # camera in place (e.g. orbit cuts) would otherwise scribble over the
+    # morph's captured target pose.
+    u.renderer.camera = Vec3(tgt_cam[0].x, tgt_cam[0].y, tgt_cam[0].z)
     u.renderer.rx = tgt_cam[1]
     u.renderer.ry = tgt_cam[2]
     set_camera_roll(tgt_cam[3])
@@ -429,56 +433,58 @@ class _MorphRenderer:
             t = elapsed_s / self._duration
         return _ease(min(1.0, max(0.0, t)), self._ease)
 
+    # Particles and camera ARRIVE at their destinations at this fraction
+    # of the transition, then hold while the target scene fades in
+    # beneath them. Arrival must precede the target ramp-in: the target
+    # backdrop is rendered from the FINAL camera pose, so fading it in
+    # while the camera (or the particles) are still in flight produces a
+    # ghosted double-image — invisible for diffuse targets like galaxies,
+    # glaring for structured ones like text.
+    _ARRIVE = 0.78
+
     def draw(self, screen):
         from astronim.utils.tools import set_camera_roll
         e = self._progress()
+        # Flight progress: hits 1.0 at e=_ARRIVE and holds
+        p = min(1.0, e / self._ARRIVE)
 
         # Camera lerp — write back to the live renderer
         if self._renderer is not None:
             sa = self._src_cam[0]; sb = self._tgt_cam[0]
             self._renderer.camera = Vec3(
-                (1 - e) * sa.x + e * sb.x,
-                (1 - e) * sa.y + e * sb.y,
-                (1 - e) * sa.z + e * sb.z,
+                (1 - p) * sa.x + p * sb.x,
+                (1 - p) * sa.y + p * sb.y,
+                (1 - p) * sa.z + p * sb.z,
             )
-            self._renderer.rx = (1 - e) * self._src_cam[1] + e * self._tgt_cam[1]
-            self._renderer.ry = (1 - e) * self._src_cam[2] + e * self._tgt_cam[2]
+            self._renderer.rx = (1 - p) * self._src_cam[1] + p * self._tgt_cam[1]
+            self._renderer.ry = (1 - p) * self._src_cam[2] + p * self._tgt_cam[2]
             # Roll is the third rotation axis; same lerp as rx/ry.
-            set_camera_roll((1 - e) * self._src_roll + e * self._tgt_roll)
+            set_camera_roll((1 - p) * self._src_roll + p * self._tgt_roll)
 
         # Crossfade schedule. Quick handoffs at the start and end so we
         # don't dwell in dim states; at every moment at least ONE of
         # {source, particles, target} is at >= 50% opacity:
         #
-        #   source:    full [0.00, 0.15], fades to 0 over [0.15, 0.30]
-        #   particles: ramp [0.15, 0.30] (matches source fade-out),
-        #              hold full [0.30, 0.70],
-        #              fade [0.70, 0.85] (matches target ramp-in)
-        #   target:    0 until 0.70, ramps to full over [0.70, 0.85],
+        #   flight:    particles + camera arrive at e=0.78 and hold
+        #   source:    full [0.00, 0.45], fades to 0 over [0.45, 0.60]
+        #   particles: ramp to full by e=0.10,
+        #              hold full [0.10, 0.82],
+        #              fade [0.82, 0.94] — AFTER arrival, sitting exactly
+        #              on the target geometry as the real render replaces
+        #              them underneath
+        #   target:    0 until 0.78 (arrival), ramps in over [0.78, 0.90]
+        #              from a camera that now matches its render pose,
         #              holds full to end
-        #
-        # Crossover invariants:
-        #   - At e=0.225 (mid of source-out / particles-in): each at ~50%
-        #   - At e=0.775 (mid of particles-out / target-in): each at ~50%
-        #   - Source briefly held at full at the start [0, 0.15]
-        #   - Target briefly held at full at the end [0.85, 1.0]
         def _fade(t, start, end):
             if end <= start:
                 return 1.0 if t >= end else 0.0
             return max(0.0, min(1.0, (t - start) / (end - start)))
 
-        # Particles ramp from 0.65 baseline to full by e=0.10 — they
-        # appear immediately on top of the source so source + particles
-        # are both visible together. Source then holds at full until
-        # e=0.45, after which it fades out alone over [0.45, 0.60]
-        # while particles stay at full. From e=0.60 to 0.70 the screen
-        # is just particles. Tail end [0.70, 0.85] is unchanged: target
-        # ramps in additively and particles fade out.
-        target_factor = _fade(e, 0.70, 0.85)
+        target_factor = _fade(e, 0.78, 0.90)
         source_factor = 1.0 - _fade(e, 0.45, 0.60)
         particle_factor = min(
             0.65 + 0.35 * _fade(e, 0.0, 0.10),
-            1.0 - _fade(e, 0.70, 0.85),
+            1.0 - _fade(e, 0.82, 0.94),
         )
         # stash for the particle-rendering block below
         self._frame_particle_factor = particle_factor
@@ -500,9 +506,9 @@ class _MorphRenderer:
                     screen.blit(surf, (0, 0))
             return
 
-        # Lerp positions and colors
-        pos = (1 - e) * self._src_pos + e * self._tgt_pos
-        col = (1 - e) * self._src_col + e * self._tgt_col
+        # Lerp positions and colors on the flight clock (arrive-and-hold)
+        pos = (1 - p) * self._src_pos + p * self._tgt_pos
+        col = (1 - p) * self._src_col + p * self._tgt_col
         col = np.clip(col, 0.0, 255.0).astype(int)
 
         # Project all positions in batch using the (now lerped) renderer cam

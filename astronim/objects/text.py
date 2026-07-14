@@ -36,6 +36,8 @@ class Text:
         wpm: float = 80.0,
         typing_jitter: float = 0.4,
         cursor: bool = True,
+        fade_in: float = 0.0,      # seconds to fade from invisible to full
+        fade_delay: float = 0.0,   # seconds to wait before the fade starts
     ):
         self.pos = pos
         self.message = message
@@ -45,6 +47,8 @@ class Text:
         self.wpm = wpm
         self.typing_jitter = typing_jitter
         self.cursor = cursor
+        self.fade_in = float(fade_in)
+        self.fade_delay = float(fade_delay)
         self.static = True
 
         # Pre-bake the cumulative reveal schedule. cum[i] = scene-time
@@ -101,6 +105,15 @@ class Text:
         # Bump the frame counter for the next draw
         self._frames_drawn += 1
 
+        # Fade-in envelope (frame-paced like everything else)
+        alpha = 255
+        if self.fade_in > 0.0 or self.fade_delay > 0.0:
+            t = scene_t - self.fade_delay
+            if t <= 0.0:
+                return
+            if self.fade_in > 0.0:
+                alpha = int(255 * min(1.0, t / self.fade_in))
+
         if not visible and not cursor_glyph:
             return
 
@@ -121,11 +134,15 @@ class Text:
             full_surface = font.render(self.message, True, self.color)
             full_w, full_h = full_surface.get_size()
             partial_surface = font.render(visible + cursor_glyph, True, self.color)
+            if alpha < 255:
+                partial_surface.set_alpha(alpha)
             left = int(text_pos[0] - full_w / 2)
             top = int(text_pos[1] - full_h / 2)
             screen.blit(partial_surface, (left, top))
         else:
             text_surface = font.render(self.message + cursor_glyph, True, self.color)
+            if alpha < 255:
+                text_surface.set_alpha(alpha)
             rect = text_surface.get_rect()
             rect.center = text_pos
             screen.blit(text_surface, rect)

@@ -4,7 +4,7 @@ from astronim.utils.tools import get_2d, Vec3, distance
 from astronim.utils.constants import DEPTH
 
 class LineBetween: 
-    def __init__(self, obj1, obj2, color = (255, 255, 255), width: int= 2, animate: bool = False, speed: float = 0.01):
+    def __init__(self, obj1, obj2, color = (255, 255, 255), width: int= 2, animate: bool = False, speed: float = 0.01, delay: float = 0.0):
 
         self.obj1 = obj1
         self.obj2 = obj2
@@ -13,16 +13,22 @@ class LineBetween:
         self.width = width
         self.animate = animate
         self.speed = speed
+        self.delay = float(delay)      # seconds (frame-paced at 60 fps) before an animated line starts drawing
         self.progress = 0 if self.animate else 1
+        self._frames = 0
         self.static = True
 
-    def draw(self, screen): 
+    def draw(self, screen):
+
+        self._frames += 1
+        if self.animate and self._frames <= self.delay * 60.0:
+            return
 
         start, end = self.init_start_end()
 
-        if start and end: 
+        if start and end:
 
-            if self.progress < 1: 
+            if self.progress < 1:
                 self.progress = min(1, self.progress + self.speed)
 
             start_x, start_y = start

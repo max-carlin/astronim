@@ -2,9 +2,10 @@ import pygame
 import numpy as np
 import math
 from astronim.utils.tools import distance, get_2d, Vec3
+from astronim.utils.constants import DEPTH
 
 class Star:
-    def __init__(self, pos:Vec3, vel: Vec3, mass: float, radius: float = 0.01, color = (255, 255, 255), trail = False):
+    def __init__(self, pos:Vec3, vel: Vec3, mass: float, radius: float = 0.01, color = (255, 255, 255), trail = False, static: bool = False):
         self.pos = pos
         self.velocity = [vel.x, vel.y, vel.z]
         self.mass = mass
@@ -13,6 +14,12 @@ class Star:
         self.trail_list = []
         self.trail_length = 50
         self.trail = trail
+        # Only set the attribute when True: Simulation.add treats a missing
+        # `static` attribute as "dynamic" (AttributeError path), but an
+        # object carrying static == False would fall through BOTH of add()'s
+        # branches and be silently dropped from the simulation.
+        if static:
+            self.static = True
 
         
 
@@ -42,7 +49,7 @@ class Star:
             return
         if obj_pos_2d:
             dist = distance(self.pos, Star.camera)
-            self.radius = max(2, min(20, int(self.base_radius * 500 / dist)))
+            self.radius = max(2, min(20, int(self.base_radius * DEPTH / dist)))
 
             self.draw_glow_circle(
                 screen, self.color, obj_pos_2d,

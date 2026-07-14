@@ -235,6 +235,14 @@ class Universe:
                     i += 1
                     continue   # trailing transition with nothing to morph into
 
+                # Deregister the outgoing scene's camera animation BEFORE
+                # morph setup: setup renders the target scene for its
+                # backdrop, and a still-live callback would fire on that
+                # draw — steering the camera (and, for callbacks that
+                # mutate it in place, corrupting captured poses) while the
+                # morph is being constructed.
+                self.renderer.clear_camera_animation()
+
                 try:
                     morph = setup_morph_transition(self, item, next_scene)
                 except Exception:
@@ -266,6 +274,10 @@ class Universe:
     def _run_one_scene(self, scene, target_fps):
         self.simulation.clear()
         self.renderer.trail_surface.fill((0, 0, 0, 0))
+        # Fresh camera-animation slate: without this, a callback registered
+        # by the previous scene (e.g. an orbit) keeps firing every frame and
+        # steers the camera through scenes that never asked for it.
+        self.renderer.clear_camera_animation()
         try:
             scene.build(self)
         except Exception:

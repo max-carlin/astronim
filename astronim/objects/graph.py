@@ -10,9 +10,11 @@ import time
 
 class Graph: 
 
-    def __init__(self, width_height:tuple, x_data: np.ndarray, y_data: np.ndarray, 
-                 pos:tuple = (0, 0, 0), points_per_second = 30, frame_color = (255, 255, 255), 
-                 point_color = (255, 255, 255), alpha:int = 255, color_fn: callable = None):
+    def __init__(self, width_height:tuple, x_data: np.ndarray, y_data: np.ndarray,
+                 pos:tuple = (0, 0, 0), points_per_second = 30, frame_color = (255, 255, 255),
+                 point_color = (255, 255, 255), alpha:int = 255, color_fn: callable = None,
+                 delay: float = 0.0, point_radius: int = 3,
+                 instant: bool = False):
 
         self.width, self.height = width_height
         self.x_data = x_data
@@ -30,12 +32,24 @@ class Graph:
         self.data_i = 0
         self.last_time = time.time()
         self.points_per_second = points_per_second
+        self.delay = float(delay)   # seconds (frame-paced at 60 fps) before anything draws
+        self.point_radius = int(point_radius)
+        # instant=True: frame + all data fully drawn from the first frame
+        # (no draw-on animation), and the frame follows self.pos if it is
+        # moved afterwards — for graphs that slide around a scene.
+        self.instant = bool(instant)
+        self._frames = 0            # frame-paced clock (recording-safe)
+        self._edges_at = None       # pos the edges were built for
 
         self.edges = []
         self.static = True
 
 
-    def draw(self, screen): 
+    def draw(self, screen):
+        self._frames += 1
+        if self._frames <= self.delay * 60.0:
+            return
+
         dist = distance(self.pos, Graph.camera)
         scale = max(0, int(self.base_size * DEPTH / dist))
         pos_2d = get_2d(self.pos - Graph.camera, Graph.rx, Graph.ry)
@@ -45,6 +59,10 @@ class Graph:
             
             if not self.edges:
                 self.init_edges()
+            elif self.instant and self._edges_at != (self.pos.x,
+                                                     self.pos.y,
+                                                     self.pos.z):
+                self.init_edges()   # frame follows a moving pos
 
             for edge in self.edges: 
                 edge.set_camera(Graph.camera, Graph.rx, Graph.ry)
@@ -67,13 +85,14 @@ class Graph:
         self.tr = self.pos + Vec3( hw,  hh, 0)  # top-right
         self.br = self.pos + Vec3( hw, -hh, 0)  # bottom-right
 
-       
+        animate = not self.instant
         self.edges = [
-            LineBetween(self.bl, self.tl, animate=True, speed=0.008, color = self.frame_color),
-            LineBetween(self.tl, self.tr, animate=True, speed=0.008, color = self.frame_color),
-            LineBetween(self.tr, self.br, animate=True, speed=0.008, color = self.frame_color),
-            LineBetween(self.br, self.bl, animate=True, speed=0.008, color = self.frame_color),
+            LineBetween(self.bl, self.tl, animate=animate, speed=0.008, color = self.frame_color),
+            LineBetween(self.tl, self.tr, animate=animate, speed=0.008, color = self.frame_color),
+            LineBetween(self.tr, self.br, animate=animate, speed=0.008, color = self.frame_color),
+            LineBetween(self.br, self.bl, animate=animate, speed=0.008, color = self.frame_color),
         ]
+        self._edges_at = (self.pos.x, self.pos.y, self.pos.z)
 
     def scatter(self, screen, margin = 0.01):
          
@@ -94,9 +113,12 @@ class Graph:
         self._scatter_surface.fill((0, 0, 0, 0))  
 
         if self.current_x_data and self.current_y_data:
-        
-            x_min, x_max = np.min(self.current_x_data), np.max(self.current_x_data)
-            y_min, y_max = np.min(self.current_y_data), np.max(self.current_y_data)
+
+            # Normalize against the FULL dataset, not just the points
+            # streamed so far — otherwise the axes rescale every frame as
+            # data arrives and already-plotted points slide around.
+            x_min, x_max = np.min(self.x_data), np.max(self.x_data)
+            y_min, y_max = np.min(self.y_data), np.max(self.y_data)
 
             # do not want to divide by zero
             x_range = x_max - x_min if x_max != x_min else 1
@@ -128,29 +150,42 @@ class Graph:
                         self._scatter_surface,
                         self.current_colors[j] if self.color_fn else color,
                         point_2d,
-                        3
+                        self.point_radius
                     )
             screen.blit(self._scatter_surface, (0, 0))
 
 
     def update_data_animation(self):
-        now = time.time()
-        dt = now - self.last_time
-        points_to_add = int(dt * self.points_per_second)
+        if self.instant:
+            # Everything visible from frame one
+            if self.data_i < len(self.x_data):
+                self.current_x_data = list(self.x_data)
+                self.current_y_data = list(self.y_data)
+                if self.color_fn is not None:
+                    self.current_colors = [self.color_fn(i)
+                                           for i in range(len(self.x_data))]
+                self.data_i = len(self.x_data)
+            return
+        # Frame-paced (one draw = 1/60 s of scene time) so recordings get
+        # the same reveal speed regardless of how slow real ticks are.
+        # Points hold until the frame's edge draw-on completes, then stream.
+        if self.edges and any(e.progress < 1 for e in self.edges):
+            self._points_started_at = self._frames
+            return
+        started = getattr(self, "_points_started_at", 0)
+        elapsed_s = (self._frames - started) / 60.0
+        target = min(len(self.x_data), int(elapsed_s * self.points_per_second))
 
-        if points_to_add > 0:
-            self.last_time = now
-            for _ in range(points_to_add):
-                if self.data_i < len(self.x_data):
-                    self.current_x_data.append(self.x_data[self.data_i])
-                    self.current_y_data.append(self.y_data[self.data_i])
+        while self.data_i < target:
+            self.current_x_data.append(self.x_data[self.data_i])
+            self.current_y_data.append(self.y_data[self.data_i])
 
-                    if self.color_fn is not None:
-                        self.current_colors.append(
-                            self.color_fn(self.data_i)
-                        )
+            if self.color_fn is not None:
+                self.current_colors.append(
+                    self.color_fn(self.data_i)
+                )
 
-                    self.data_i += 1
+            self.data_i += 1
 
 
 

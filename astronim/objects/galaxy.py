@@ -50,9 +50,16 @@ class Galaxy:
         "ARM_Y_MEAN": 50,
         "SPIRAL": 1.5,
         "ARMS": 4,
-        "MAJOR_AXIS" : 75,  
-        "MINOR_AXIS" : 50,  
-        "Z_THICKNESS": 5 
+        "MAJOR_AXIS" : 75,
+        "MINOR_AXIS" : 50,
+        "Z_THICKNESS": 5,
+        # Per-star screen sizes (pixels). The defaults match the original
+        # hardcoded look; shrink both for a small, far-away galaxy.
+        "STAR_RADIUS": 2,
+        "GLOW_RADIUS": 20,
+        # Fraction (0..1) of stars forced to the custom `color` kwarg.
+        # None keeps the legacy behavior (~1/3 custom, 2/3 palette).
+        "COLOR_MIX": None,
     }
 
     def __init__(self, pos:Vec3, galaxy_type: str = 'spiral_galaxy',
@@ -212,7 +219,10 @@ class Galaxy:
             # Project to 2D
             star_2d = get_2d(world_star - Galaxy.camera, Galaxy.rx, Galaxy.ry)
             if star_2d:
-                self.draw_glow_circle(screen, local_star[1], star_2d, radius=2, glow_radius=20)
+                self.draw_glow_circle(
+                    screen, local_star[1], star_2d,
+                    radius=self.params["STAR_RADIUS"],
+                    glow_radius=self.params["GLOW_RADIUS"])
   
 
         
@@ -238,12 +248,17 @@ class Galaxy:
         self.draw_glow_circle(screen, color, obj_pos_2d, radius=2, glow_radius=20)
         pygame.draw.circle(screen, color, obj_pos_2d, 2)
 
-    def get_star_color(self): 
+    def get_star_color(self):
 
-        if self.color: 
-            p = np.random.randint(0, 2)
-            if p == 0:
-                return self.color
+        if self.color:
+            mix = self.params.get("COLOR_MIX")
+            if mix is not None:
+                if random.uniform(0.0, 1.0) < mix:
+                    return self.color
+            else:
+                p = np.random.randint(0, 2)
+                if p == 0:
+                    return self.color
 
         r = random.uniform(0, 100)
         cumulative = 0

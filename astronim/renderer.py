@@ -212,8 +212,15 @@ class Renderer:
     #     #     self.csv_frame_counter = 0
 
     def camera_animation(self, camera_function):
-        self.camera_movement_called = True 
+        self.camera_movement_called = True
         self.camera_function = camera_function
+
+    def clear_camera_animation(self):
+        '''Deregister the per-frame camera callback. Called by run_scenes
+        between scenes so a camera animation registered by one scene can't
+        leak into the next.'''
+        self.camera_movement_called = False
+        self.camera_function = None
 
 
         
